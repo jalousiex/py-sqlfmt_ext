@@ -31,4 +31,5 @@ split_words = (
     r"(AUTO\s+)?PARTITION\s+BY\b",
     r"DISTRIBUTED\s+BY\b",
     r"\bON",
+    r"LATERAL\s+VIEW",
 )

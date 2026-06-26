@@ -191,6 +191,22 @@ class AlignedIndentFilter:
             self._process_function(tlist)
             return
 
+        # 判断是否在函数调用的括号内（如 explode(...)），这类不做 AS/逗号对齐
+        # 判断依据：父括号内不含 DML/DDL（即不是子查询括号），且不在 INSERT 语句中
+        in_func_paren = False
+        if isinstance(tlist.parent, sql.Parenthesis):
+            _, has_dml = tlist.parent.token_next_by(t=(T.DML, T.DDL))
+            if not has_dml and self._curr_stmt.get_type() != "INSERT":
+                in_func_paren = True
+
+        # lateral view 后的列列表不做换行对齐，保持同行
+        if plist := tlist.parent:
+            pidx = plist.token_index(tlist)
+            _, prev_ = plist.token_prev(pidx, skip_cm=True)
+            if prev_ and prev_.match(T.Keyword, r"LATERAL\s+VIEW", regex=True):
+                self._process_default(tlist, stmts=False)
+                return
+
         offset = self._get_offset(tlist[0])
         # WITH列表，取WITH后的第一个token的偏移
         if plist := tlist.parent:
@@ -580,9 +596,13 @@ class AlignedIndentFilter:
             if next_ and next_.value.startswith("--") and next_.value.endswith(self.n):
                 _, token_notkey_ = tlist.token_next(tidx, skip_cm=True)
         while token:
-            # joins, group/order by are special case. only consider the first
+            # joins, group/order by, lateral view are special case. only consider the first
             # word as aligner
-            if token.match(T.Keyword, self.join_words, regex=True) or token.match(T.Keyword, self.by_words, regex=True):
+            if (
+                token.match(T.Keyword, self.join_words, regex=True)
+                or token.match(T.Keyword, self.by_words, regex=True)
+                or token.match(T.Keyword, r"LATERAL\s+VIEW", regex=True)
+            ):
                 token_indent = token.value.split()[0]
             elif token is token_notkey_:
                 token_indent = 1
