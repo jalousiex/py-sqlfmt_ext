@@ -66,6 +66,7 @@ SQL_REGEX = [
         tokens.Keyword,
     ),
     (r"END(\s+IF|\s+LOOP|\s+WHILE)?\b", tokens.Keyword),
+    (r"IF\s+(NOT\s+)?EXISTS\b", tokens.Keyword),
     (r"NOT\s+NULL\b", tokens.Keyword),
     (r"(ASC|DESC)(\s+NULLS\s+(FIRST|LAST))?\b", tokens.Keyword.Order),
     (r"(ASC|DESC)\b", tokens.Keyword.Order),
@@ -91,7 +92,7 @@ SQL_REGEX = [
     (r"DISTRIBUTED\s+BY\b", tokens.Keyword),  # Doris
     (r"(AT|WITH')\s+TIME\s+ZONE\s+'[^']+'", tokens.Keyword.TZCast),
     (r"(NOT\s+)?(LIKE|ILIKE|RLIKE)\b", tokens.Operator.Comparison),
-    (r"(NOT\s+)?(REGEXP)\b", tokens.Operator.Comparison),  # 识别为操作符后会添加空格
+    (r"(NOT\s+)?(REGEXP)(\s+(BINARY))?\b", tokens.Operator.Comparison),  # 识别为操作符后会添加空格
     # Check for keywords, also returns tokens.Name if regex matches
     # but the match isn't a keyword.
     (r"\w[$#\w]*", PROCESS_AS_KEYWORD),  # 在lexer中处理，若未识别过，则判断是否为关键字，否则返回原Name属性

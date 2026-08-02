@@ -18,7 +18,8 @@ from contextlib import contextmanager
 # It matches groups of characters: newlines, quoted strings, or unquoted text,
 # and splits on that basis. The post-processing step puts those back together
 # into the actual lines of SQL.
-SPLIT_REGEX = re.compile(r"""
+SPLIT_REGEX = re.compile(
+    r"""
 (
  (?:                     # Start of non-capturing group
   (?:\r\n|\r|\n)      |  # Match any single newline, or
@@ -28,9 +29,11 @@ SPLIT_REGEX = re.compile(r"""
   '(?:[^'\\]|\\.)*'      # Match single quoted strings
  )
 )
-""", re.VERBOSE)
+""",
+    re.VERBOSE,
+)
 
-LINE_MATCH = re.compile(r'(\r\n|\r|\n)')
+LINE_MATCH = re.compile(r"(\r\n|\r|\n)")
 
 
 def split_unquoted_newlines(stmt):
@@ -40,12 +43,12 @@ def split_unquoted_newlines(stmt):
     character is inside of a string."""
     text = str(stmt)
     lines = SPLIT_REGEX.split(text)
-    outputlines = ['']
+    outputlines = [""]
     for line in lines:
         if not line:
             continue
         elif LINE_MATCH.match(line):
-            outputlines.append('')
+            outputlines.append("")
         else:
             outputlines[-1] += line
     return outputlines
@@ -55,23 +58,24 @@ def remove_quotes(val):
     """Helper that removes surrounding quotes from strings."""
     if val is None:
         return
-    if val[0] in ('"', "'", '`') and val[0] == val[-1]:
+    if val[0] in ('"', "'", "`") and val[0] == val[-1]:
         val = val[1:-1]
     return val
 
 
-def recurse(*cls): # 装饰器参数传递到第1层
-    """Function decorator to help with recursion 参数表示不递归的类
+def recurse(*cls):
+    """Function decorator to help with recursion
 
     :param cls: Classes to not recurse over
     :return: function
     """
-    def wrap(f): # 原函数作为参数传递到第2层
-        def wrapped_f(tlist): # 原参数传递到第3层, 执行额外操作, 深度遍历
+
+    def wrap(f):
+        def wrapped_f(tlist):
             for sgroup in tlist.get_sublists():
                 if not isinstance(sgroup, cls):
                     wrapped_f(sgroup)
-            f(tlist) # 执行原函数, 带原参数
+            f(tlist)
 
         return wrapped_f
 

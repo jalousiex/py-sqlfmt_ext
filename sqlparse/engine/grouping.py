@@ -7,35 +7,38 @@
 
 from sqlparse import keywords_list, sql
 from sqlparse import tokens as T
+from sqlparse.exceptions import SQLParseError
 from sqlparse.utils import imt, recurse
 
 JOIN_WORDS = keywords_list.join_words
 BY_WORDS = keywords_list.by_words
 SPLIT_WORDS = keywords_list.split_words
 
+# Limits to prevent DoS on malformed/deeply nested SQL
+MAX_GROUPING_DEPTH = 100
+MAX_GROUPING_TOKENS = 10000
+
 T_NUMERICAL = (T.Number, T.Number.Integer, T.Number.Float)
 T_STRING = (T.String, T.String.Single, T.String.Symbol)
 T_NAME = (T.Name, T.Name.Placeholder)
 
 
-def _group_matching(tlist, cls):
+def _group_matching(tlist, cls, depth=0):
     """Groups Tokens that have beginning and end."""
+    if MAX_GROUPING_DEPTH is not None and depth > MAX_GROUPING_DEPTH:
+        raise SQLParseError(f"Maximum grouping depth exceeded ({MAX_GROUPING_DEPTH}).")
+    if MAX_GROUPING_TOKENS is not None and len(tlist.tokens) > MAX_GROUPING_TOKENS:
+        raise SQLParseError(f"Maximum number of tokens exceeded ({MAX_GROUPING_TOKENS}).")
     opens = []
     tidx_offset = 0
     for idx, token in enumerate(list(tlist)):
         tidx = idx - tidx_offset
 
         if token.is_whitespace:
-            # ~50% of tokens will be whitespace. Will checking early
-            # for them avoid 3 comparisons, but then add 1 more comparison
-            # for the other ~50% of tokens...
             continue
 
         if token.is_group and not isinstance(token, cls):
-            # Check inside previously grouped (i.e. parenthesis) if group
-            # of different type is inside (i.e., case). though ideally  should
-            # should check for all open/close tokens at once to avoid recursion
-            _group_matching(token, cls)
+            _group_matching(token, cls, depth + 1)
             continue
 
         if token.match(*cls.M_OPEN):
@@ -45,8 +48,6 @@ def _group_matching(tlist, cls):
             try:
                 open_idx = opens.pop()
             except IndexError:
-                # this indicates invalid sql and unbalanced tokens.
-                # instead of break, continue in case other "valid" groups exist
                 continue
             close_idx = tidx
             tlist.group_tokens(cls, open_idx, close_idx)
@@ -170,8 +171,7 @@ def group_as(tlist):
         return token.is_keyword and token.normalized == "AS"
 
     def valid_prev(token):
-        return True  # 支持关键字作为字段名？
-        return token.normalized == "NULL" or not token.is_keyword
+        return True  # 支持关键字作为字段名
 
     def valid_next(token):
         ttypes = T.DML, T.DDL, T.CTE
@@ -534,8 +534,13 @@ def _group(
     extend=True,
     recurse=True,
     skip_cm=False,
+    depth=0,
 ):
     """Groups together tokens that are joined by a middle token. i.e. x < y"""
+    if MAX_GROUPING_DEPTH is not None and depth > MAX_GROUPING_DEPTH:
+        raise SQLParseError(f"Maximum grouping depth exceeded ({MAX_GROUPING_DEPTH}).")
+    if MAX_GROUPING_TOKENS is not None and len(tlist.tokens) > MAX_GROUPING_TOKENS:
+        raise SQLParseError(f"Maximum number of tokens exceeded ({MAX_GROUPING_TOKENS}).")
 
     tidx_offset = 0
     pidx, prev_ = None, None
@@ -543,15 +548,14 @@ def _group(
         if token.is_whitespace:
             continue
 
-        # 在这里跳过注释
         if skip_cm and imt(token, t=T.Comment, i=sql.Comment):
             continue
 
         if recurse and token.is_group and not isinstance(token, cls):
-            _group(token, cls, match, valid_prev, valid_next, post, extend, recurse, skip_cm)
+            _group(token, cls, match, valid_prev, valid_next, post, extend, recurse, skip_cm, depth + 1)
 
-        tidx = idx - tidx_offset  # tidx记录了上次token序号, tidx_offset记录了已合并个数
-        if tidx < 0:  # tidx shouldn't get negative
+        tidx = idx - tidx_offset
+        if tidx < 0:
             continue
 
         if match(token):
