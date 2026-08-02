@@ -31,7 +31,9 @@ def _group_matching(tlist, cls, depth=0):
         raise SQLParseError(f"Maximum number of tokens exceeded ({MAX_GROUPING_TOKENS}).")
     opens = []
     tidx_offset = 0
-    for idx, token in enumerate(list(tlist)):
+    token_list = list(tlist)
+
+    for idx, token in enumerate(token_list):
         tidx = idx - tidx_offset
 
         if token.is_whitespace:
@@ -134,13 +136,33 @@ def group_typed_literal(tlist):
     def post(tlist, pidx, tidx, nidx):
         return tidx, nidx
 
-    _group(tlist, sql.TypedLiteral, match, valid_prev, valid_next, post, extend=False)
-    _group(tlist, sql.TypedLiteral, match_to_extend, valid_prev, valid_final, post, extend=True)
+    _group(
+        tlist,
+        sql.TypedLiteral,
+        match,
+        valid_prev,
+        valid_next,
+        post,
+        extend=False,
+    )
+    _group(
+        tlist,
+        sql.TypedLiteral,
+        match_to_extend,
+        valid_prev,
+        valid_final,
+        post,
+        extend=True,
+    )
 
 
 def group_period(tlist):
     def match(token):
-        for ttype, value in ((T.Punctuation, "."), (T.Operator, "->"), (T.Operator, "->>")):
+        for ttype, value in (
+            (T.Punctuation, "."),
+            (T.Operator, "->"),
+            (T.Operator, "->>"),
+        ):
             if token.match(ttype, value):
                 return True
         return False
@@ -202,7 +224,13 @@ def group_assignment(tlist):
 
 
 def group_comparison(tlist):
-    sqlcls = (sql.Parenthesis, sql.Function, sql.Identifier, sql.Operation, sql.TypedLiteral)
+    sqlcls = (
+        sql.Parenthesis,
+        sql.Function,
+        sql.Identifier,
+        sql.Operation,
+        sql.TypedLiteral,
+    )
     ttypes = T_NUMERICAL + T_STRING + T_NAME
 
     def match(token):
@@ -261,13 +289,29 @@ def group_arrays(tlist):
     def post(tlist, pidx, tidx, nidx):
         return pidx, tidx
 
-    _group(tlist, sql.Identifier, match, valid_prev, valid_next, post, extend=True, recurse=False)
+    _group(
+        tlist,
+        sql.Identifier,
+        match,
+        valid_prev,
+        valid_next,
+        post,
+        extend=True,
+        recurse=False,
+    )
 
 
 def group_operator(tlist):
     # 修正+-开头的场景
     ttypes = T_NUMERICAL + T_STRING + T_NAME
-    sqlcls = (sql.SquareBrackets, sql.Parenthesis, sql.Function, sql.Identifier, sql.Operation, sql.TypedLiteral)
+    sqlcls = (
+        sql.SquareBrackets,
+        sql.Parenthesis,
+        sql.Function,
+        sql.Identifier,
+        sql.Operation,
+        sql.TypedLiteral,
+    )
 
     def match(token):
         return imt(token, t=(T.Operator, T.Wildcard))
@@ -292,7 +336,16 @@ def group_operator(tlist):
         else:
             return pidx, nidx
 
-    _group(tlist, sql.Operation, match, valid_prev, valid_next, post, extend=False, skip_cm=True)
+    _group(
+        tlist,
+        sql.Operation,
+        match,
+        valid_prev,
+        valid_next,
+        post,
+        extend=False,
+        skip_cm=True,
+    )
 
 
 def group_identifier_list(tlist):
@@ -350,7 +403,17 @@ def group_identifier_list(tlist):
             group_identifier_list(sgroup)
 
     _ = 1
-    _group(tlist, sql.IdentifierList, match, valid_prev, valid_next, post, extend=True, recurse=False, skip_cm=True)
+    _group(
+        tlist,
+        sql.IdentifierList,
+        match,
+        valid_prev,
+        valid_next,
+        post,
+        extend=True,
+        recurse=False,
+        skip_cm=True,
+    )
 
 
 @recurse(sql.Comment)
@@ -359,7 +422,10 @@ def group_comments(tlist):
     # return
     tidx, token = tlist.token_next_by(t=T.Comment)
     while token:
-        eidx, end = tlist.token_not_matching(lambda tk: imt(tk, t=T.Comment.Mutiline) or tk.is_newline, idx=tidx + 1)
+        eidx, end = tlist.token_not_matching(
+            lambda tk: imt(tk, t=T.Comment.Mutiline) or tk.is_newline,
+            idx=tidx + 1,
+        )
         if end is not None:
             eidx, end = tlist.token_prev(eidx, skip_ws=False)
             tlist.group_tokens(sql.Comment, tidx, eidx)
@@ -386,7 +452,14 @@ def group_where(tlist):
 
 @recurse()
 def group_aliased(tlist):
-    I_ALIAS = (sql.Parenthesis, sql.Function, sql.Case, sql.Identifier, sql.Operation, sql.Comparison)
+    I_ALIAS = (
+        sql.Parenthesis,
+        sql.Function,
+        sql.Case,
+        sql.Identifier,
+        sql.Operation,
+        sql.Comparison,
+    )
 
     tidx, token = tlist.token_next_by(i=I_ALIAS, t=[T.Number, T.String], m=(T.Keyword, "NULL"))
     while token:
@@ -427,7 +500,19 @@ def group_functions(tlist):
         if (
             not token.match(T.Keyword, SPLIT_WORDS, True)
             and not token.match(T.DML, ("SELECT"))
-            and not token.match(T.Keyword, ("CASE", "THEN", "WHEN", "ELSE", "DISTINCT", "AS", "IN", "EXISTS"))
+            and not token.match(
+                T.Keyword,
+                (
+                    "CASE",
+                    "THEN",
+                    "WHEN",
+                    "ELSE",
+                    "DISTINCT",
+                    "AS",
+                    "IN",
+                    "EXISTS",
+                ),
+            )
         ):
             nidx, next_ = tlist.token_next(tidx, skip_cm=True)
             if isinstance(next_, sql.Parenthesis):
@@ -552,7 +637,18 @@ def _group(
             continue
 
         if recurse and token.is_group and not isinstance(token, cls):
-            _group(token, cls, match, valid_prev, valid_next, post, extend, recurse, skip_cm, depth + 1)
+            _group(
+                token,
+                cls,
+                match,
+                valid_prev,
+                valid_next,
+                post,
+                extend,
+                recurse,
+                skip_cm,
+                depth + 1,
+            )
 
         tidx = idx - tidx_offset
         if tidx < 0:

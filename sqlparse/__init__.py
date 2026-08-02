@@ -7,16 +7,24 @@
 
 """Parse SQL statements."""
 
-from typing import IO, Any, Generator, List, Optional, Tuple, Union
-
 # Setup namespace
-from sqlparse import cli, engine, filters, formatter, sql, tokens
+from typing import Any, Generator, IO, List, Optional, Tuple, Union
+
+from sqlparse import sql
+from sqlparse import cli
+from sqlparse import engine
+from sqlparse import tokens
+from sqlparse import filters
+from sqlparse import formatter
+
 
 __version__ = "0.5.5"
 __all__ = ["engine", "filters", "formatter", "sql", "tokens", "cli"]
 
 
-def parse(sql: str, encoding: Optional[str] = None) -> Tuple[sql.Statement, ...]:
+def parse(
+    sql: str, encoding: Optional[str] = None
+) -> Tuple[sql.Statement, ...]:
     """Parse sql and return a list of statements.
 
     :param sql: A string containing one or more SQL statements.
@@ -26,7 +34,9 @@ def parse(sql: str, encoding: Optional[str] = None) -> Tuple[sql.Statement, ...]
     return tuple(parsestream(sql, encoding))
 
 
-def parsestream(stream: Union[str, IO[str]], encoding: Optional[str] = None) -> Generator[sql.Statement, None, None]:
+def parsestream(
+    stream: Union[str, IO[str]], encoding: Optional[str] = None
+) -> Generator[sql.Statement, None, None]:
     """Parses sql statements from file-like object.
 
     :param stream: A file-like object.
@@ -55,7 +65,9 @@ def format(sql: str, encoding: Optional[str] = None, **options: Any) -> str:
     return "".join(stack.run(sql, encoding))
 
 
-def split(sql: str, encoding: Optional[str] = None, strip_semicolon: bool = False) -> List[str]:
+def split(
+    sql: str, encoding: Optional[str] = None, strip_semicolon: bool = False
+) -> List[str]:
     """Split *sql* into single statements.
 
     :param sql: A string containing one or more SQL statements.
