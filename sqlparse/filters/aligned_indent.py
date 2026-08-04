@@ -7,7 +7,7 @@
 
 from sqlparse import keywords_list, sql
 from sqlparse import tokens as T
-from sqlparse.utils import indent, offset
+from sqlparse.utils import imt, indent, offset
 
 
 class AlignedIndentFilter:
@@ -623,14 +623,30 @@ class AlignedIndentFilter:
 
     def _split_statements(self, tlist):
         ttypes = T.CTE, T.Keyword.DML, T.Keyword.DDL
+
+        def is_alter_table_drop(token_):
+            if not token_ or token_.normalized != "DROP":
+                return False
+
+            # 忽略行首注释，判断语句是否以 ALTER TABLE 开头
+            heads = [tk for tk in tlist.tokens if not tk.is_whitespace and not imt(tk, t=T.Comment, i=sql.Comment)]
+            if len(heads) < 3:
+                return False
+
+            return heads[0].match(T.Keyword.DDL, "ALTER") and heads[1].match(T.Keyword, "TABLE") and token_ in heads[2:]
+
         # tidx为当前处理的token的索引, token为当前处理的token对象
         tidx, token = tlist.token_next_by(t=ttypes)
         while token:
             # 插入换行带有缩进, 所以先删除前边紧邻空白中的换行, 再插入
             tidx, ws_ = self._remove_prev_newline(tlist, tidx)
-            if ws_:  # 首行不缩进，回退，非根节点
-                tlist.insert_before(tidx, self.nl("SELECT"))
-                tidx += 1
+            if ws_:
+                if is_alter_table_drop(token):
+                    tlist.insert_before(tidx, sql.Token(T.Whitespace, " "))
+                    tidx += 1
+                else:  # 首行不缩进，回退，非根节点
+                    tlist.insert_before(tidx, self.nl("SELECT"))
+                    tidx += 1
             tidx, token = tlist.token_next_by(t=ttypes, idx=tidx)
 
     def _process_default(self, tlist, stmts=True):

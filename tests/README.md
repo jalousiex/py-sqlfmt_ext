@@ -8,10 +8,10 @@
 ## 运行测试
 
 ```bash
-python -m unittest discover -s tests -p "test_*.py"
+python -m pytest
 ```
 
-当前 unittest 结构拆分为三类检查：
+当前 pytest 结构拆分为三类检查：
 1. 用例完整性：结构、唯一性、字段非空。
 2. 输出回归：格式化输出与期望 SQL 一致。
 3. 幂等性：第二次格式化结果不再变化。
@@ -39,10 +39,10 @@ PowerShell 示例：
 
 ```powershell
 $env:SQLFMT_CASE_TAGS = "case"
-python -m unittest discover -s tests -p "test_*.py"
+python -m pytest
 
 $env:SQLFMT_CASE_TAGS = "window,long"
-python -m unittest discover -s tests -p "test_*.py"
+python -m pytest
 
 Remove-Item Env:SQLFMT_CASE_TAGS
 ```
