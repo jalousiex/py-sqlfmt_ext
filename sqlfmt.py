@@ -35,8 +35,7 @@ def sqlfmt(sql, **options):
 def sqlfilefmt(sql, **options):
     rst = []
     for s in sp.split(sql):
-        # print(sqlfmt(s))
-        rst.append(sqlfmt(s, **options))
+        rst.append(sqlfmt(s, **options).strip())
     return "\n\n".join(rst)
 
 

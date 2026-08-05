@@ -1,6 +1,7 @@
 ﻿import os
 
 import sqlfmt
+
 from tests.fixtures.sql_cases import SQL_CASES, normalize_sql
 
 
