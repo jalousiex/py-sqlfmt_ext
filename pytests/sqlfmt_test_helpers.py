@@ -2,12 +2,17 @@
 
 import sqlfmt
 
-from tests.fixtures.sql_cases import SQL_CASES, normalize_sql
+from pytests.fixtures.sql_cases import SQL_CASES, normalize_sql
 
 
 def format_with_entry_defaults(sql_text: str) -> str:
     # 使用 sqlfmt 入口函数默认行为进行格式化。
     return normalize_sql(sqlfmt.sqlfilefmt(sql_text))
+
+
+def format_with_options(sql_text: str, **options) -> str:
+    """使用自定义选项进行格式化。"""
+    return normalize_sql(sqlfmt.sqlfilefmt(sql_text, **options))
 
 
 def case_expected(case) -> str:

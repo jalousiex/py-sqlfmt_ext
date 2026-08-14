@@ -18,10 +18,10 @@ python sqlfmt.py path/to/file.sql --in-place
 ## 测试
 
 ```bash
-python -m pytest tests/ -v
+python -m pytest pytests/ -v
 ```
 
-测试覆盖三类：用例完整性、格式化输出回归、幂等性。详细约定见 `tests/README.md`。
+测试覆盖三类：用例完整性、格式化输出回归、幂等性。详细约定见 `pytests/README.md`。
 
 ## 目录
 
@@ -29,7 +29,7 @@ python -m pytest tests/ -v
 |------|------|
 | `sqlparse/` | 官方 sqlparse 源码 + 本地定制 |
 | `sqlfmt.py` | 项目入口，封装默认参数 |
-| `tests/` | pytest 测试与 SQL 夹具 |
+| `pytests/` | pytest 测试与 SQL 夹具 |
 
 ---
 
@@ -55,9 +55,9 @@ sqlfmt.py → sqlparse.format()
 
 ### 测试约定
 
-- `tests/fixtures/cases/` 下的 `.sql` 文件**即期望输出**，测试验证幂等性（格式化后期望输出不变）
+- `pytests/fixtures/cases/` 下的 `.sql` 文件**即期望输出**，测试验证幂等性（格式化后期望输出不变）
 - 新增用例只需在对应 `cases/<topic>/` 下添加 `.sql` 文件，无需改测试代码
-- `TOPIC_META` 在 `tests/fixtures/sql_cases.py` 中注册新 topic
+- `TOPIC_META` 在 `pytests/fixtures/sql_cases.py` 中注册新 topic
 
 ### 默认格式化参数
 

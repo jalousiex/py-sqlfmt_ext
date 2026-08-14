@@ -2,16 +2,20 @@
 
 import pytest
 
-from tests.sqlfmt_test_helpers import (
+from pytests.sqlfmt_test_helpers import (
     case_expected,
     format_with_entry_defaults,
+    format_with_options,
     selected_cases,
 )
 
 
 @pytest.mark.parametrize("case", selected_cases(), ids=lambda case: case.name)
 def test_sqlfmt_entry_output_should_match_expected(case):
-    actual_output = format_with_entry_defaults(case.input_sql)
+    if case.options:
+        actual_output = format_with_options(case.input_sql, **case.options)
+    else:
+        actual_output = format_with_entry_defaults(case.input_sql)
     expected_output = case_expected(case)
     diff = "".join(
         difflib.unified_diff(

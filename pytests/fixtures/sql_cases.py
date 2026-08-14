@@ -1,6 +1,6 @@
-﻿from dataclasses import dataclass
+﻿from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 
 def normalize_sql(text: str) -> str:
@@ -14,6 +14,7 @@ class SqlCase:
     expected_sql: str
     note: str
     tags: Tuple[str, ...] = ()
+    options: Dict = field(default_factory=dict)
 
 
 def _read_fixture(filename: str) -> str:
@@ -22,14 +23,15 @@ def _read_fixture(filename: str) -> str:
 
 
 TOPIC_META = {
-    "ddl": {"label": "DDL", "tags": ("ddl", "long", "split")},
-    "dml": {"label": "DML", "tags": ("dml", "long", "split")},
-    "cte": {"label": "CTE", "tags": ("cte", "long", "split")},
-    "nested": {"label": "嵌套查询", "tags": ("nested", "long", "split")},
-    "case": {"label": "CASE", "tags": ("case", "long", "split")},
-    "aggregate": {"label": "聚合", "tags": ("aggregate", "split")},
-    "window": {"label": "窗口函数", "tags": ("window", "long", "split")},
-    "debug": {"label": "调试", "tags": ("debug", "short", "split")},
+    "ddl":        {"label": "DDL",      "tags": ("ddl", "long", "split")},
+    "dml":        {"label": "DML",      "tags": ("dml", "long", "split")},
+    "cte":        {"label": "CTE",      "tags": ("cte", "long", "split")},
+    "nested":     {"label": "嵌套查询",  "tags": ("nested", "long", "split")},
+    "case":       {"label": "CASE",     "tags": ("case", "long", "split")},
+    "aggregate":  {"label": "聚合",      "tags": ("aggregate", "split")},
+    "window":     {"label": "窗口函数",  "tags": ("window", "long", "split")},
+    "debug":      {"label": "调试",      "tags": ("debug", "short", "split")},
+    "comma":      {"label": "逗号选项",  "tags": ("comma", "short", "split")},
 }
 
 
@@ -37,6 +39,13 @@ def _discover_case_files() -> List[Path]:
     base_dir = Path(__file__).resolve().parent / "cases"
     files = [p for p in base_dir.glob("*/*.sql") if p.is_file()]
     return sorted(files, key=lambda p: p.as_posix())
+
+
+# 文件名后缀 → 额外选项覆盖（用于同 topic 下不同选项的用例）
+FILE_OPTIONS = {
+    "sqltest7_s01": {"comma_align": False},
+    "sqltest7_s02": {"comma_first": True},
+}
 
 
 def _build_case(case_file: Path) -> SqlCase:
@@ -48,12 +57,15 @@ def _build_case(case_file: Path) -> SqlCase:
     note = f"{meta['label']} 用例：{case_file.stem}"
     sql_text = normalize_sql(_read_fixture(f"cases/{rel_path}"))
 
+    options = {**meta.get("options", {}), **FILE_OPTIONS.get(case_file.stem, {})}
+
     return SqlCase(
         name=case_name,
         input_sql=sql_text,
         expected_sql=sql_text,
         note=note,
         tags=meta["tags"],
+        options=options,
     )
 
 

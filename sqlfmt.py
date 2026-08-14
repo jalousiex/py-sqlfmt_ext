@@ -21,6 +21,7 @@ DEFAULT_OPTIONS = {
     "reindent_aligned": True,
     "wrap_after": 30,
     "use_space_around_operators": True,
+    "comma_align": True,
 }
 
 
@@ -59,6 +60,7 @@ if __name__ == "__main__":
     parser.add_argument("-s", "--use_space_around_operators", action="store_true", default=None)
     parser.add_argument("--wrap_after", type=int)
     parser.add_argument("--comma_first", action="store_true", default=None)
+    parser.add_argument("--comma_align", action="store_true", default=None)
     parser.add_argument("--compact", action="store_true", default=None)
     parser.add_argument("--encoding", default=enc)
     args = parser.parse_args()

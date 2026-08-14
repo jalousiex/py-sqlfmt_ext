@@ -15,11 +15,13 @@ class AlignedIndentFilter:
     by_words = keywords_list.by_words
     split_words = keywords_list.split_words
 
-    def __init__(self, char=" ", n="\n"):
+    def __init__(self, char=" ", n="\n", comma_align=False, comma_first=False):
         self.n = n
         self.offset = 0  # Token级对齐偏移
         self.indent = 0  # TokenList级关键字缩进
         self.char = char
+        self.comma_align = comma_align
+        self.comma_first = comma_first
         self.leading_kwd = "select"
         self._curr_stmt = None
 
@@ -475,8 +477,8 @@ class AlignedIndentFilter:
                         token.insert_after(token[-1], sql.Token(T.Whitespace, self.char * as_ws))
                     else:
                         token.parent.insert_after(token, sql.Token(T.Whitespace, self.char * as_ws))
-            # 逗号对齐，列表有alias时才处理，没有alias的添加一个前置空格
-            if max_alias_len:
+            # 逗号对齐：仅当 comma_align 开启且非 comma_first 模式时处理
+            if self.comma_align and not self.comma_first and max_alias_len:
                 alias_ws = max_alias_len + (-alias_len if alias else 1)
                 if as_offset > max_as_offset:  # 再扣除超长的部分
                     alias_ws = max(0, alias_ws - (as_offset - max_as_offset))
