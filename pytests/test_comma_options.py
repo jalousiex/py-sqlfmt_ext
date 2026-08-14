@@ -1,4 +1,4 @@
-"""测试 comma_align 和 comma_first 参数行为
+"""测试 align_list 和 comma_first 参数行为
 
 用例通过 tests/fixtures/cases/comma/ 下的 .sql fixture 文件定义，
 文件内容即为格式化后的预期输出（幂等）。

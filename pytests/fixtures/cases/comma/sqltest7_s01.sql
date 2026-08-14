@@ -1,7 +1,7 @@
-/*-- 逗号对齐测试：comma_align=False 不填充空白对齐末尾逗号*/
-select EmpCode, -- 员工编码,
+/*-- 对齐测试：align_list=False 不填充空白对齐末尾逗号*/
+select EmpCode, -- 员工编码
        curdate() - interval 1 day HRD_NAME,
-       curdate() - interval 1 day as empNAME,
+       curdate() - interval 1 day as empNAME, -- 这是empNAME的注释
        IFNULL(`t3`.`abc`,`t1`.`cde` --
               ) ff,
        min(StatYM) over(partition by CompanyCode, MaterialCode, KxMaterialCode, RequireType) as StatYM_min, -- 组合最早出现时间

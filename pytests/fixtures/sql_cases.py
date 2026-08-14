@@ -43,7 +43,7 @@ def _discover_case_files() -> List[Path]:
 
 # 文件名后缀 → 额外选项覆盖（用于同 topic 下不同选项的用例）
 FILE_OPTIONS = {
-    "sqltest7_s01": {"comma_align": False},
+    "sqltest7_s01": {"align_list": False},
     "sqltest7_s02": {"comma_first": True},
 }
 
