@@ -15,12 +15,12 @@ class AlignedIndentFilter:
     by_words = keywords_list.by_words
     split_words = keywords_list.split_words
 
-    def __init__(self, char=" ", n="\n", comma_align=False, comma_first=False):
+    def __init__(self, char=" ", n="\n", align_list=False, comma_first=False):
         self.n = n
         self.offset = 0  # Token级对齐偏移
         self.indent = 0  # TokenList级关键字缩进
         self.char = char
-        self.comma_align = comma_align
+        self.align_list = align_list
         self.comma_first = comma_first
         self.leading_kwd = "select"
         self._curr_stmt = None
@@ -56,28 +56,31 @@ class AlignedIndentFilter:
         return sql.Token(T.Whitespace, self.n + self.char * (self.leading_ws + offset))
 
     def _remove_prev_newline(self, tlist, tidx=0):
-        """在整个stmt, 清除前边连续空白, 但只返回本层prev, 包括单行注释后的换行, 记得清除后必须重新换行对齐"""
+        """清除 tidx 前的连续空白 token，为插入新换行做准备。
+        如果前一个非空白 token 以 \\n 结尾（如单行注释），去掉末尾 \\n。
+        """
         pidx, prev_ = tlist.token_prev(tidx, skip_ws=False)
         while prev_ and prev_.is_whitespace:
-            # 空白节点不会单独成组, 一定是其它非空白子节点, 处理其末尾换行
             del tlist.tokens[pidx]
             tidx -= 1
             pidx, prev_ = tlist.token_prev(tidx, skip_ws=False)
 
-        if prev_ and prev_.value.rstrip(" ").endswith(self.n):  # 'where 1=1 --\n '
+        if prev_ and prev_.value.rstrip(" ").endswith(self.n):
             if prev_.is_group:
                 _, _ = self._remove_prev_newline(prev_, len(prev_.tokens))
             else:
                 prev_.value = prev_.value.rstrip()
-        elif prev_:
-            pass
-        else:
-            # 向上
+                # 如果 prev_ 有 tokens 属性（如 Comment 是 TokenList），
+                # 同步更新内部 token 的 value
+                if hasattr(prev_, "tokens") and prev_.tokens:
+                    last = prev_.tokens[-1]
+                    if last.value.endswith(self.n):
+                        last.value = last.value.rstrip()
+        elif prev_ is None:
             plist = tlist.parent
             if plist:
                 _, _ = self._remove_prev_newline(plist, plist.token_index(tlist))
 
-        # 更新属性
         tlist.value = str(tlist)
         return tidx, prev_
 
@@ -227,17 +230,84 @@ class AlignedIndentFilter:
         identifiers = list(tlist.get_identifiers())
         if identifiers[0] == tlist[0]:  # select后的第一个token不需要对齐
             identifiers.pop(0)
-        # 对齐当前组合的首个
-        for _, token in enumerate(identifiers):
-            if not (
-                token.match(T.Keyword, self.join_words, regex=True) or token.match(T.Keyword, self.by_words, regex=True)
-            ):
-                # 先删除前边紧邻空白中的换行
-                _, _ = self._remove_prev_newline(tlist, tlist.token_index(token))
-                tlist.insert_before(token, self.nl(offset))
-        self._process_default(tlist, stmts=False)
-        # 新增对齐逻辑
-        self._align_identifierlist(list(tlist.get_identifiers()))
+
+        if self.comma_first:
+            # 逗号在行首模式：在每个逗号前换行，注释移到 identifier 后
+            cf_offset = len(self.leading_kwd)
+            # 第一遍：收集注释并清除空白，在逗号前换行
+            comment_map = {}  # id(identifier) -> [comments]
+            for i, token in enumerate(identifiers):
+                if token.match(T.Keyword, self.join_words, regex=True) or token.match(
+                    T.Keyword, self.by_words, regex=True
+                ):
+                    continue
+                tidx = tlist.token_index(token)
+                # 找前一个逗号
+                _, comma = tlist.token_prev(tidx, skip_cm=True)
+                if not (comma and comma.match(T.Punctuation, ",")):
+                    continue
+                cidx = tlist.token_index(comma)
+                # 收集逗号前的注释，然后清除空白（复用 _remove_prev_newline 的注释处理）
+                comments = []
+                pidx = cidx
+                while pidx > 0:
+                    pidx, ptk = tlist.token_prev(pidx, skip_ws=False)
+                    if ptk is None:
+                        break
+                    if ptk.is_whitespace:
+                        continue
+                    if isinstance(ptk, sql.Comment):
+                        # 去掉注释末尾 \\n（复用 _remove_prev_newline 的模式）
+                        if ptk.value.endswith("\n"):
+                            ptk.value = ptk.value.rstrip()
+                            if hasattr(ptk, "tokens") and ptk.tokens:
+                                last = ptk.tokens[-1]
+                                if last.value.endswith("\n"):
+                                    last.value = last.value.rstrip()
+                        comments.insert(0, ptk)
+                    else:
+                        break
+                if comments:
+                    # 注释属于前一个 identifier；i==0 时属于被 pop 的首个 identifier
+                    prev_identifier = identifiers[i - 1] if i > 0 else tlist[0]
+                    comment_map[id(prev_identifier)] = comments
+                # 清除逗号前的空白和注释
+                pidx = cidx
+                while pidx > 0:
+                    pidx, ptk = tlist.token_prev(pidx, skip_ws=False)
+                    if ptk and (ptk.is_whitespace or isinstance(ptk, sql.Comment)):
+                        del tlist.tokens[pidx]
+                    else:
+                        break
+                # 在逗号前插入换行
+                tlist.insert_before(comma, self.nl(cf_offset))
+
+            # 第二遍：把注释附加到对应 identifier 后（含被 pop 的首个 identifier）
+            all_identifiers = [tlist[0]] + identifiers
+            for token in all_identifiers:
+                for c in comment_map.get(id(token), []):
+                    if token.is_group:
+                        token.insert_after(token[-1], sql.Token(T.Whitespace, " "))
+                        token.insert_after(token[-1], c)
+                    else:
+                        tlist.insert_after(token, sql.Token(T.Whitespace, " "))
+                        tlist.insert_after(token, c)
+
+            self._process_default(tlist, stmts=False)
+        else:
+            # 默认模式：在每个 identifier 前换行
+            for _, token in enumerate(identifiers):
+                if not (
+                    token.match(T.Keyword, self.join_words, regex=True)
+                    or token.match(T.Keyword, self.by_words, regex=True)
+                ):
+                    tidx = tlist.token_index(token)
+                    _, _ = self._remove_prev_newline(tlist, tidx)
+                    tlist.insert_before(token, self.nl(offset))
+            self._process_default(tlist, stmts=False)
+            # 对齐逻辑：仅 align_list 开启时执行
+            if self.align_list:
+                self._align_identifierlist(list(tlist.get_identifiers()))
 
     def _process_case(self, tlist):
         # 先处理为深度遍历，后处理为广度遍历，处理注释换行
@@ -314,6 +384,10 @@ class AlignedIndentFilter:
 
     def _process_comment(self, tlist):
         # 深度遍历时的注释要基于父对象处理，在后一token前换行，含新增的强制换行
+
+        # comma_first 模式下，IdentifierList 中的注释已由 _process_identifierlist 处理，跳过
+        if self.comma_first and isinstance(tlist.parent, sql.IdentifierList):
+            return
 
         # 不处理行首注释，只处理需要换行的单行注释和强制换行
         # 括号带有缩进，获取偏移时是自动换行的只有一个空白，改为不考虑相对偏移
@@ -477,8 +551,8 @@ class AlignedIndentFilter:
                         token.insert_after(token[-1], sql.Token(T.Whitespace, self.char * as_ws))
                     else:
                         token.parent.insert_after(token, sql.Token(T.Whitespace, self.char * as_ws))
-            # 逗号对齐：仅当 comma_align 开启且非 comma_first 模式时处理
-            if self.comma_align and not self.comma_first and max_alias_len:
+            # 逗号对齐：comma_first 模式下逗号在行首，不做末尾对齐
+            if not self.comma_first and max_alias_len:
                 alias_ws = max_alias_len + (-alias_len if alias else 1)
                 if as_offset > max_as_offset:  # 再扣除超长的部分
                     alias_ws = max(0, alias_ws - (as_offset - max_as_offset))

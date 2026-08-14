@@ -91,7 +91,10 @@ class StripWhitespaceFilter:
         is_first_char = True
         for token in tlist.tokens:
             if token.is_whitespace:
-                token.value = '' if last_was_ws or is_first_char else ' '
+                if token.is_newline:
+                    token.value = '' if last_was_ws else '\n'
+                else:
+                    token.value = '' if last_was_ws or is_first_char else ' '
             last_was_ws = token.is_whitespace
             is_first_char = False
 

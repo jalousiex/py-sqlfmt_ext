@@ -1,6 +1,6 @@
 /*-- 对齐测试：align_list=False 不填充空白对齐末尾逗号*/
 /*-- 逗号测试：comma_first=True 逗号在行首*/
-select EmpCode
+select EmpCode -- 员工编码
       ,curdate() - interval 1 day HRD_NAME
       ,curdate() - interval 1 day as empNAME -- 这是empNAME的注释
       ,IFNULL(`t3`.`abc`,`t1`.`cde` --

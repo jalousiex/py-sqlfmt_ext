@@ -23,15 +23,15 @@ def _read_fixture(filename: str) -> str:
 
 
 TOPIC_META = {
-    "ddl":        {"label": "DDL",      "tags": ("ddl", "long", "split")},
-    "dml":        {"label": "DML",      "tags": ("dml", "long", "split")},
-    "cte":        {"label": "CTE",      "tags": ("cte", "long", "split")},
-    "nested":     {"label": "嵌套查询",  "tags": ("nested", "long", "split")},
-    "case":       {"label": "CASE",     "tags": ("case", "long", "split")},
-    "aggregate":  {"label": "聚合",      "tags": ("aggregate", "split")},
-    "window":     {"label": "窗口函数",  "tags": ("window", "long", "split")},
-    "debug":      {"label": "调试",      "tags": ("debug", "short", "split")},
-    "comma":      {"label": "逗号选项",  "tags": ("comma", "short", "split")},
+    "ddl": {"label": "DDL", "tags": ("ddl", "long", "split")},
+    "dml": {"label": "DML", "tags": ("dml", "long", "split")},
+    "cte": {"label": "CTE", "tags": ("cte", "long", "split")},
+    "nested": {"label": "嵌套查询", "tags": ("nested", "long", "split")},
+    "case": {"label": "CASE", "tags": ("case", "long", "split")},
+    "aggregate": {"label": "聚合", "tags": ("aggregate", "split")},
+    "window": {"label": "窗口函数", "tags": ("window", "long", "split")},
+    "debug": {"label": "调试", "tags": ("debug", "short", "split")},
+    "comma": {"label": "逗号选项", "tags": ("comma", "short", "split")},
 }
 
 

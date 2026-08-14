@@ -103,10 +103,10 @@ def validate_options(options):  # noqa: C901
         raise SQLParseError("comma_first requires a boolean value")
     options["comma_first"] = comma_first
 
-    comma_align = options.get("comma_align", False)
-    if comma_align not in [True, False]:
-        raise SQLParseError("comma_align requires a boolean value")
-    options["comma_align"] = comma_align
+    align_list = options.get("align_list", False)
+    if align_list not in [True, False]:
+        raise SQLParseError("align_list requires a boolean value")
+    options["align_list"] = align_list
 
     compact = options.get("compact", False)
     if compact not in [True, False]:
@@ -176,7 +176,7 @@ def build_filter_stack(stack, options):
         stack.enable_grouping()
         stack.stmtprocess.append(
             filters.AlignedIndentFilter(
-                char=options["indent_char"], comma_align=options["comma_align"], comma_first=options["comma_first"]
+                char=options["indent_char"], align_list=options["align_list"], comma_first=options["comma_first"]
             )
         )
 
