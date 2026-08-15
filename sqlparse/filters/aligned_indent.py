@@ -672,6 +672,17 @@ class AlignedIndentFilter:
             if next_ and next_.value.startswith("--") and next_.value.endswith(self.n):
                 _, token_notkey_ = tlist.token_next(tidx, skip_cm=True)
         while token:
+            # SELECT * FROM / SELECT t.* FROM 不换行
+            if token.normalized == "FROM" and self._is_simple_select_star(tlist, tidx):
+                # 删除 FROM 前已有的换行，替换为普通空格
+                tidx, _ = self._remove_prev_newline(tlist, tidx)
+                pidx, prev_ = tlist.token_prev(tidx, skip_ws=False)
+                if prev_ and not prev_.is_whitespace:
+                    tlist.insert_before(tidx, sql.Token(T.Whitespace, " "))
+                    tidx += 1
+                tidx, token = self._next_token(tlist, tidx)
+                continue
+
             # joins, group/order by, lateral view are special case. only consider the first
             # word as aligner
             if (
@@ -696,6 +707,36 @@ class AlignedIndentFilter:
                 tidx, token = tlist.token_index(token_notkey_), token_notkey_
             else:
                 tidx, token = self._next_token(tlist, tidx)
+
+    @staticmethod
+    def _is_simple_select_star(tlist, from_tidx):
+        """检查 FROM 前是否只有 SELECT * / SELECT alias.* 的简单查询。"""
+        # 收集 FROM 之前所有非空白、非注释 token
+        prev_tokens = []
+        pidx = from_tidx
+        while True:
+            pidx, pt = tlist.token_prev(pidx, skip_ws=True)
+            if not pt:
+                break
+            prev_tokens.append(pt)
+        # 反转恢复顺序
+        prev_tokens.reverse()
+        # 过滤掉无关 token
+        meaningful = [t for t in prev_tokens if not t.is_whitespace and not imt(t, t=T.Comment, i=sql.Comment)]
+        if len(meaningful) < 2:
+            return False
+        # 第一个必须是 SELECT
+        if not meaningful[0].match(T.Keyword.DML, "SELECT"):
+            return False
+        # 其余 token 只能是 * 或 alias.* 模式
+        values = [t.value for t in meaningful[1:]]
+        joined = "".join(values)
+        # 匹配 * 或 alias.*
+        import re
+
+        if re.fullmatch(r"\*|[A-Za-z_]\w*\.\*", joined):
+            return True
+        return False
 
     def _split_statements(self, tlist):
         ttypes = T.CTE, T.Keyword.DML, T.Keyword.DDL
