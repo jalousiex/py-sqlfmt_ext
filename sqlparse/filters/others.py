@@ -7,7 +7,8 @@
 
 import re
 
-from sqlparse import sql, tokens as T
+from sqlparse import sql
+from sqlparse import tokens as T
 from sqlparse.utils import split_unquoted_newlines
 
 
@@ -24,11 +25,11 @@ class StripCommentsFilter:
             # Note: The actual value for a line break is replaced by \n
             # in SerializerUnicode which will be executed in the
             # postprocessing state.
-            m = re.search(r'([\r\n]+) *$', token.value)
+            m = re.search(r"([\r\n]+) *$", token.value)
             if m is not None:
                 return sql.Token(T.Whitespace.Newline, m.groups()[0])
             else:
-                return sql.Token(T.Whitespace, ' ')
+                return sql.Token(T.Whitespace, " ")
 
         sql_hints = (T.Comment.Multiline.Hint, T.Comment.Single.Hint)
         tidx, token = get_next_comment()
@@ -55,13 +56,16 @@ class StripCommentsFilter:
             # Replace by whitespace if prev and next exist and if they're not
             # whitespaces. This doesn't apply if prev or next is a parenthesis.
             if (
-                prev_ is None or next_ is None
-                or prev_.is_whitespace or prev_.match(T.Punctuation, '(')
-                or next_.is_whitespace or next_.match(T.Punctuation, ')')
+                prev_ is None
+                or next_ is None
+                or prev_.is_whitespace
+                or prev_.match(T.Punctuation, "(")
+                or next_.is_whitespace
+                or next_.match(T.Punctuation, ")")
             ):
                 # Insert a whitespace to ensure the following SQL produces
                 # a valid SQL (see #425).
-                if prev_ is not None and not prev_.match(T.Punctuation, '('):
+                if prev_ is not None and not prev_.match(T.Punctuation, "("):
                     tlist.tokens.insert(tidx, _get_insert_token(token))
                 tlist.tokens.remove(token)
                 tidx -= 1
@@ -81,7 +85,7 @@ class StripCommentsFilter:
 
 class StripWhitespaceFilter:
     def _stripws(self, tlist):
-        func_name = f'_stripws_{type(tlist).__name__}'
+        func_name = f"_stripws_{type(tlist).__name__}"
         func = getattr(self, func_name.lower(), self._stripws_default)
         func(tlist)
 
@@ -92,9 +96,9 @@ class StripWhitespaceFilter:
         for token in tlist.tokens:
             if token.is_whitespace:
                 if token.is_newline:
-                    token.value = '' if last_was_ws else '\n'
+                    token.value = "" if last_was_ws else "\n"
                 else:
-                    token.value = '' if last_was_ws or is_first_char else ' '
+                    token.value = "" if last_was_ws or is_first_char else " "
             last_was_ws = token.is_whitespace
             is_first_char = False
 
@@ -102,7 +106,7 @@ class StripWhitespaceFilter:
         # Removes newlines before commas, see issue140
         last_nl = None
         for token in list(tlist.tokens):
-            if last_nl and token.ttype is T.Punctuation and token.value == ',':
+            if last_nl and token.ttype is T.Punctuation and token.value == ",":
                 tlist.tokens.remove(last_nl)
             last_nl = token if token.is_whitespace else None
 
@@ -132,19 +136,77 @@ class StripWhitespaceFilter:
 
 
 class SpacesAroundOperatorsFilter:
+    # 类型参数中的尖括号不应加空格：ARRAY<VARIANT>, MAP<STRING,INT>
+    _TYPE_KEYWORDS = {"ARRAY", "MAP", "STRUCT", "UNIONTYPE"}
+
+    @staticmethod
+    def _is_type_angle_bracket(tlist, tidx, token):
+        """检查 < 或 > 是否处于类型参数上下文中（如 ARRAY<VARIANT>）。"""
+        # 支持 >> 等合并的尖括号（嵌套泛型 ARRAY<MAP<A,B>>）
+        if not token.value or all(c in "<>" for c in token.value):
+            is_angle = True
+        else:
+            return False
+
+        def _last_value(tok):
+            """递归获取 token 的最后一个有意义的值。"""
+            if tok.is_group:
+                # 从后往前找第一个非空白 token
+                for child in reversed(tok.tokens):
+                    if not child.is_whitespace:
+                        return _last_value(child)
+                return ""
+            return tok.value.upper()
+
+        def _first_value(tok):
+            """递归获取 token 的第一个有意义的值。"""
+            if tok.is_group:
+                for child in tok.tokens:
+                    if not child.is_whitespace:
+                        return _first_value(child)
+                return ""
+            return tok.value.upper()
+
+        pidx, prev_ = tlist.token_prev(tidx, skip_ws=True)
+        nidx, next_ = tlist.token_next(tidx, skip_ws=True)
+
+        if "<" in token.value:
+            # < 前面是类型关键字或 >（嵌套），后面是类型名或 <（嵌套）
+            if prev_ and (_last_value(prev_) in SpacesAroundOperatorsFilter._TYPE_KEYWORDS or prev_.value == ">"):
+                return True
+            if next_ and (_first_value(next_) in SpacesAroundOperatorsFilter._TYPE_KEYWORDS or next_.value == "<"):
+                return True
+        if ">" in token.value:
+            # > 前面是类型名/关键字/>/数字，后面是 )/,/>/>
+            if prev_ and (
+                _last_value(prev_) in SpacesAroundOperatorsFilter._TYPE_KEYWORDS
+                or prev_.ttype == T.Name.Builtin
+                or prev_.value == ">"
+            ):
+                return True
+            if next_ and next_.value in (")", ",", ">"):
+                return True
+
+        return False
+
     @staticmethod
     def _process(tlist):
 
         ttypes = (T.Operator, T.Comparison)
         tidx, token = tlist.token_next_by(t=ttypes)
         while token:
+            # 跳过类型参数中的尖括号
+            if SpacesAroundOperatorsFilter._is_type_angle_bracket(tlist, tidx, token):
+                tidx, token = tlist.token_next_by(t=ttypes, idx=tidx)
+                continue
+
             nidx, next_ = tlist.token_next(tidx, skip_ws=False)
             if next_ and next_.ttype != T.Whitespace and not isinstance(next_, sql.Parenthesis):
                 tlist.insert_after(tidx, sql.Token(T.Whitespace, " "))
 
             pidx, prev_ = tlist.token_prev(tidx, skip_ws=False)
             if prev_ and prev_.ttype != T.Whitespace:
-                tlist.insert_before(tidx, sql.Token(T.Whitespace, ' '))
+                tlist.insert_before(tidx, sql.Token(T.Whitespace, " "))
                 tidx += 1  # has to shift since token inserted before it
 
             # assert tlist.token_index(token) == tidx
@@ -158,8 +220,7 @@ class SpacesAroundOperatorsFilter:
 
 class StripTrailingSemicolonFilter:
     def process(self, stmt):
-        while stmt.tokens and (stmt.tokens[-1].is_whitespace
-                               or stmt.tokens[-1].value == ';'):
+        while stmt.tokens and (stmt.tokens[-1].is_whitespace or stmt.tokens[-1].value == ";"):
             stmt.tokens.pop()
         return stmt
 
@@ -172,4 +233,4 @@ class SerializerUnicode:
     @staticmethod
     def process(stmt):
         lines = split_unquoted_newlines(stmt)
-        return '\n'.join(line.rstrip() for line in lines)
+        return "\n".join(line.rstrip() for line in lines)

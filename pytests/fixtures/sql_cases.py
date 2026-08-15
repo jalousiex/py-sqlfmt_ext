@@ -32,6 +32,7 @@ TOPIC_META = {
     "window": {"label": "窗口函数", "tags": ("window", "long", "split")},
     "debug": {"label": "调试", "tags": ("debug", "short", "split")},
     "comma": {"label": "逗号选项", "tags": ("comma", "short", "split")},
+    "generic": {"label": "泛型类型", "tags": ("generic", "short", "split")},
 }
 
 
