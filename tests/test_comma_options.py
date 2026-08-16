@@ -8,8 +8,8 @@ import difflib
 
 import pytest
 
-from pytests.fixtures.sql_cases import SQL_CASES
-from pytests.sqlfmt_test_helpers import case_expected, format_with_options
+from tests.fixtures.sql_cases import SQL_CASES
+from tests.sqlfmt_test_helpers import case_expected, format_with_options
 
 
 def _comma_cases():

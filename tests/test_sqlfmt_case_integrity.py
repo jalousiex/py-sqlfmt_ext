@@ -1,6 +1,6 @@
 ﻿import pytest
 
-from pytests.sqlfmt_test_helpers import case_expected, case_input, selected_cases
+from tests.sqlfmt_test_helpers import case_expected, case_input, selected_cases
 
 
 def test_cases_should_be_defined_and_unique():

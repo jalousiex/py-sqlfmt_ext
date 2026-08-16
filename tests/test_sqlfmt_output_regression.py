@@ -2,7 +2,7 @@
 
 import pytest
 
-from pytests.sqlfmt_test_helpers import (
+from tests.sqlfmt_test_helpers import (
     case_expected,
     format_with_entry_defaults,
     format_with_options,

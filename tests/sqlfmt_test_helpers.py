@@ -2,7 +2,7 @@
 
 import sqlfmt
 
-from pytests.fixtures.sql_cases import SQL_CASES, normalize_sql
+from tests.fixtures.sql_cases import SQL_CASES, normalize_sql
 
 
 def format_with_entry_defaults(sql_text: str) -> str:

@@ -1,6 +1,6 @@
 ﻿import pytest
 
-from pytests.sqlfmt_test_helpers import format_with_entry_defaults, format_with_options, selected_cases
+from tests.sqlfmt_test_helpers import format_with_entry_defaults, format_with_options, selected_cases
 
 
 @pytest.mark.parametrize("case", selected_cases(), ids=lambda case: case.name)
