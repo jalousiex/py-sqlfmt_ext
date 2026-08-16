@@ -38,7 +38,8 @@ TOPIC_META = {
 
 def _discover_case_files() -> List[Path]:
     base_dir = Path(__file__).resolve().parent / "cases"
-    files = [p for p in base_dir.glob("*/*.sql") if p.is_file()]
+    # 收集所有 .sql 文件，排除 .input.sql（它们配对到同名 .sql）
+    files = [p for p in base_dir.glob("*/*.sql") if p.is_file() and not p.name.endswith(".input.sql")]
     return sorted(files, key=lambda p: p.as_posix())
 
 
@@ -56,14 +57,23 @@ def _build_case(case_file: Path) -> SqlCase:
 
     meta = TOPIC_META.get(topic, {"label": topic.upper(), "tags": (topic, "split")})
     note = f"{meta['label']} 用例：{case_file.stem}"
-    sql_text = normalize_sql(_read_fixture(f"cases/{rel_path}"))
+
+    # 如果存在 {name}.input.sql，用它作为 input；否则 .sql 即 input 也是 expected
+    input_file = case_file.with_name(case_file.stem + ".input.sql")
+    if input_file.exists():
+        input_sql = normalize_sql(_read_fixture(f"cases/{topic}/{input_file.name}"))
+        expected_sql = normalize_sql(_read_fixture(f"cases/{rel_path}"))
+    else:
+        sql_text = normalize_sql(_read_fixture(f"cases/{rel_path}"))
+        input_sql = sql_text
+        expected_sql = sql_text
 
     options = {**meta.get("options", {}), **FILE_OPTIONS.get(case_file.stem, {})}
 
     return SqlCase(
         name=case_name,
-        input_sql=sql_text,
-        expected_sql=sql_text,
+        input_sql=input_sql,
+        expected_sql=expected_sql,
         note=note,
         tags=meta["tags"],
         options=options,

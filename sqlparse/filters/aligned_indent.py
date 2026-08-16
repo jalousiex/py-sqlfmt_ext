@@ -207,8 +207,21 @@ class AlignedIndentFilter:
         # lateral view 后的列列表不做换行对齐，保持同行
         if plist := tlist.parent:
             pidx = plist.token_index(tlist)
-            _, prev_ = plist.token_prev(pidx, skip_cm=True)
+            vidx, prev_ = plist.token_prev(pidx, skip_cm=True)
+            if prev_ and prev_.match(T.Keyword, "VIEW"):
+                _, prev2_ = plist.token_prev(vidx, skip_cm=True)
+                if prev2_ and prev2_.match(T.Keyword, "LATERAL"):
+                    # 清理列表内部已有的换行，保持同行
+                    for token in tlist.tokens:
+                        if token.is_whitespace and "\n" in token.value:
+                            token.value = " "
+                    self._process_default(tlist, stmts=False)
+                    return
+            # 也检查 prev_ 直接是 LATERAL VIEW 合并 token 的情况
             if prev_ and prev_.match(T.Keyword, r"LATERAL\s+VIEW", regex=True):
+                for token in tlist.tokens:
+                    if token.is_whitespace and "\n" in token.value:
+                        token.value = " "
                 self._process_default(tlist, stmts=False)
                 return
 
@@ -519,6 +532,23 @@ class AlignedIndentFilter:
                 nidx, _ = token.token_next(idx=-1, skip_cm=True)  # 占位，防止order by中 a desc将a取为alias
                 _, alias = token.token_next_by(idx=nidx, i=sql.Identifier)
                 _, as_tk = token.token_next_by(m=(T.Keyword, "AS"))
+
+                # 如果 as 前有换行，先清理掉（将 as 移回表达式同一行）
+                if as_tk:
+                    as_tidx = token.token_index(as_tk)
+                    pidx = as_tidx
+                    has_newline = False
+                    while True:
+                        pidx, prev_ = token.token_prev(pidx, skip_ws=False)
+                        if not prev_ or not prev_.is_whitespace:
+                            break
+                        if "\n" in prev_.value:
+                            has_newline = True
+                            del token.tokens[pidx]
+                        elif has_newline:
+                            del token.tokens[pidx]
+                    if has_newline:
+                        token.insert_before(as_tk, sql.Token(T.Whitespace, " "))
             else:  # 无子组的，如 *
                 alias, as_tk = None, None
 
@@ -543,6 +573,7 @@ class AlignedIndentFilter:
                 if as_ws:
                     token.insert_before(as_tk, sql.Token(T.Whitespace, self.char * as_ws))
             else:
+                as_ws = max_as_offset - as_offset
                 as_ws += as_placehold
                 if as_ws:
                     if alias:
