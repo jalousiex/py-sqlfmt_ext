@@ -56,33 +56,53 @@ class AlignedIndentFilter:
         return sql.Token(T.Whitespace, self.n + self.char * (self.leading_ws + offset))
 
     def _remove_prev_newline(self, tlist, tidx=0):
-        """清除 tidx 前的连续空白 token，为插入新换行做准备。
-        如果前一个非空白 token 以 \\n 结尾（如单行注释），去掉末尾 \\n。
-        """
-        pidx, prev_ = tlist.token_prev(tidx, skip_ws=False)
-        while prev_ and prev_.is_whitespace:
-            del tlist.tokens[pidx]
-            tidx -= 1
-            pidx, prev_ = tlist.token_prev(tidx, skip_ws=False)
+            """删除 tidx 前空白及尾换行，始终返回本层更新后的索引和前一 token。"""
+            while True:
+                pidx, prev_ = tlist.token_prev(tidx, skip_ws=False)
+                if not prev_ or not prev_.is_whitespace:
+                    break
+                del tlist.tokens[pidx]
+                tidx -= 1
 
-        if prev_ and prev_.value.rstrip(" ").endswith(self.n):
-            if prev_.is_group:
-                _, _ = self._remove_prev_newline(prev_, len(prev_.tokens))
+            if prev_ is None:
+                if tlist.parent:
+                    self._remove_prev_newline(tlist.parent, tlist.parent.token_index(tlist))
+            elif prev_.value.rstrip(" ").endswith(self.n):
+                if prev_.is_group:
+                    self._remove_prev_newline(prev_, len(prev_.tokens))
+                else:
+                    prev_.value = prev_.value.rstrip()
+
+            # TokenList.value 是缓存字符串，子 group 发生变更后需同步刷新。
+            tlist.value = str(tlist)
+            return tidx, prev_
+
+    @staticmethod
+    def _collapse_newlines(tlist):
+        """把 tlist 直接子级中含换行的空白 token 就地折叠为单空格（保持同行）。"""
+        for tk in tlist.tokens:
+            if tk.is_whitespace and "\n" in tk.value:
+                tk.value = " "
+
+    def _pull_inline(self, group, anchor, after=False):
+        """折叠 anchor 一侧相邻的换行空白，使被折叠内容回到 anchor 同一行。"""
+        i = group.token_index(anchor)
+        has_nl = False
+        while True:
+            i, ws = (group.token_next if after else group.token_prev)(i, skip_ws=False)
+            if not ws or not ws.is_whitespace:
+                break
+            if "\n" in ws.value:
+                has_nl = True
+            if has_nl:
+                del group.tokens[i]
+                if after:
+                    i -= 1
+        if has_nl:
+            if after:
+                group.insert_after(anchor, sql.Token(T.Whitespace, " "))
             else:
-                prev_.value = prev_.value.rstrip()
-                # 如果 prev_ 有 tokens 属性（如 Comment 是 TokenList），
-                # 同步更新内部 token 的 value
-                if hasattr(prev_, "tokens") and prev_.tokens:
-                    last = prev_.tokens[-1]
-                    if last.value.endswith(self.n):
-                        last.value = last.value.rstrip()
-        elif prev_ is None:
-            plist = tlist.parent
-            if plist:
-                _, _ = self._remove_prev_newline(plist, plist.token_index(tlist))
-
-        tlist.value = str(tlist)
-        return tidx, prev_
+                group.insert_before(anchor, sql.Token(T.Whitespace, " "))
 
     def _process_statement(self, tlist):
         if len(tlist.tokens) > 0 and tlist.tokens[0].is_whitespace and self.indent == 0:
@@ -208,20 +228,15 @@ class AlignedIndentFilter:
         if plist := tlist.parent:
             pidx = plist.token_index(tlist)
             vidx, prev_ = plist.token_prev(pidx, skip_cm=True)
+            is_lateral = False
             if prev_ and prev_.match(T.Keyword, "VIEW"):
                 _, prev2_ = plist.token_prev(vidx, skip_cm=True)
-                if prev2_ and prev2_.match(T.Keyword, "LATERAL"):
-                    # 清理列表内部已有的换行，保持同行
-                    for token in tlist.tokens:
-                        if token.is_whitespace and "\n" in token.value:
-                            token.value = " "
-                    self._process_default(tlist, stmts=False)
-                    return
-            # 也检查 prev_ 直接是 LATERAL VIEW 合并 token 的情况
-            if prev_ and prev_.match(T.Keyword, r"LATERAL\s+VIEW", regex=True):
-                for token in tlist.tokens:
-                    if token.is_whitespace and "\n" in token.value:
-                        token.value = " "
+                is_lateral = bool(prev2_ and prev2_.match(T.Keyword, "LATERAL"))
+            elif prev_ and prev_.match(T.Keyword, r"LATERAL\s+VIEW", regex=True):
+                is_lateral = True
+            if is_lateral:
+                # lateral view 后的列列表保持同行，仅折叠已有换行
+                self._collapse_newlines(tlist)
                 self._process_default(tlist, stmts=False)
                 return
 
@@ -243,6 +258,22 @@ class AlignedIndentFilter:
         identifiers = list(tlist.get_identifiers())
         if identifiers[0] == tlist[0]:  # select后的第一个token不需要对齐
             identifiers.pop(0)
+            # 首字段前（leading keyword 后）若有换行，折叠为单空格，使其回到同一行
+            if plist := tlist.parent:
+                lidx = plist.token_index(tlist)
+                j, found_nl, lead = lidx, False, None
+                while True:
+                    j, w = plist.token_prev(j, skip_ws=False)
+                    if not w or not w.is_whitespace:
+                        lead = w
+                        break
+                    if self.n in w.value:
+                        found_nl = True
+                # 仅当前导是 DML 关键字(如 select)时折叠，避免影响 INSERT 括号内字段列表
+                if found_nl and lead is not None and lead.ttype is T.DML:
+                    self._remove_prev_newline(plist, lidx)
+                    plist.insert_before(tlist, sql.Token(T.Whitespace, " "))
+                    offset = self._get_offset(tlist[0])
 
         if self.comma_first:
             # 逗号在行首模式：在每个逗号前换行，注释移到 identifier 后
@@ -533,22 +564,10 @@ class AlignedIndentFilter:
                 _, alias = token.token_next_by(idx=nidx, i=sql.Identifier)
                 _, as_tk = token.token_next_by(m=(T.Keyword, "AS"))
 
-                # 如果 as 前有换行，先清理掉（将 as 移回表达式同一行）
+                # as 前/后若有换行，折叠回同一行（表达式 as 别名）
                 if as_tk:
-                    as_tidx = token.token_index(as_tk)
-                    pidx = as_tidx
-                    has_newline = False
-                    while True:
-                        pidx, prev_ = token.token_prev(pidx, skip_ws=False)
-                        if not prev_ or not prev_.is_whitespace:
-                            break
-                        if "\n" in prev_.value:
-                            has_newline = True
-                            del token.tokens[pidx]
-                        elif has_newline:
-                            del token.tokens[pidx]
-                    if has_newline:
-                        token.insert_before(as_tk, sql.Token(T.Whitespace, " "))
+                    self._pull_inline(token, as_tk, after=False)
+                    self._pull_inline(token, as_tk, after=True)
             else:  # 无子组的，如 *
                 alias, as_tk = None, None
 
