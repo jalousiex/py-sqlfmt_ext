@@ -56,26 +56,26 @@ class AlignedIndentFilter:
         return sql.Token(T.Whitespace, self.n + self.char * (self.leading_ws + offset))
 
     def _remove_prev_newline(self, tlist, tidx=0):
-            """删除 tidx 前空白及尾换行，始终返回本层更新后的索引和前一 token。"""
-            while True:
-                pidx, prev_ = tlist.token_prev(tidx, skip_ws=False)
-                if not prev_ or not prev_.is_whitespace:
-                    break
-                del tlist.tokens[pidx]
-                tidx -= 1
+        """删除 tidx 前空白及尾换行，始终返回本层更新后的索引和前一 token。"""
+        while True:
+            pidx, prev_ = tlist.token_prev(tidx, skip_ws=False)
+            if not prev_ or not prev_.is_whitespace:
+                break
+            del tlist.tokens[pidx]
+            tidx -= 1
 
-            if prev_ is None:
-                if tlist.parent:
-                    self._remove_prev_newline(tlist.parent, tlist.parent.token_index(tlist))
-            elif prev_.value.rstrip(" ").endswith(self.n):
-                if prev_.is_group:
-                    self._remove_prev_newline(prev_, len(prev_.tokens))
-                else:
-                    prev_.value = prev_.value.rstrip()
+        if prev_ is None:
+            if tlist.parent:
+                self._remove_prev_newline(tlist.parent, tlist.parent.token_index(tlist))
+        elif prev_.value.rstrip(" ").endswith(self.n):
+            if prev_.is_group:
+                self._remove_prev_newline(prev_, len(prev_.tokens))
+            else:
+                prev_.value = prev_.value.rstrip()
 
-            # TokenList.value 是缓存字符串，子 group 发生变更后需同步刷新。
-            tlist.value = str(tlist)
-            return tidx, prev_
+        # TokenList.value 是缓存字符串，子 group 发生变更后需同步刷新。
+        tlist.value = str(tlist)
+        return tidx, prev_
 
     @staticmethod
     def _collapse_newlines(tlist):
@@ -353,6 +353,23 @@ class AlignedIndentFilter:
             if self.align_list:
                 self._align_identifierlist(list(tlist.get_identifiers()))
 
+    def _fold_case_newlines(self, tokens):
+        """折叠 when/then 内容中非注释强制的换行为单空格，注释前的换行是语法所需，保留。
+
+        Operation（如 ``a || b``）不会被其它流程单独重新缩进，需递归展开处理。
+        """
+        prev_tok = None
+        for tk in tokens:
+            if tk == "":  # get_cases 中用于占位的空字符串
+                continue
+            if tk.is_whitespace and "\n" in tk.value:
+                if not (prev_tok is not None and imt(prev_tok, t=T.Comment, i=sql.Comment)):
+                    tk.value = " "
+            elif isinstance(tk, sql.Operation):
+                self._fold_case_newlines(tk.tokens)
+            if not tk.is_whitespace:
+                prev_tok = tk
+
     def _process_case(self, tlist):
         # 先处理为深度遍历，后处理为广度遍历，处理注释换行
         self._process_default(tlist, stmts=False)
@@ -361,6 +378,11 @@ class AlignedIndentFilter:
         case_offset = self._get_offset(tlist.token_first(), relative=False)
         offset_ = len("case ")
         cases = tlist.get_cases()  # 跳过空白后注释的换行无法识别
+        # 折叠 when/then 中非注释强制的换行，避免遗留原始输入的随意折行
+        for cond, value in cases:
+            if cond:
+                self._fold_case_newlines(cond)
+            self._fold_case_newlines(value)
         # align the end as well
         end_token = tlist.token_next_by(m=(T.Keyword, "END"))[1]
         cases.append((None, [end_token]))
@@ -402,6 +424,25 @@ class AlignedIndentFilter:
                     _, _ = self._remove_prev_newline(tlist, tlist.token_index(stmt))
                     cond_offset = offset_ if i < len(cases) - 1 else 0
                     tlist.insert_before(stmt, self.nl(cond_offset))
+                else:
+                    # 首个when：仅当原始输入在case后直接换行（无注释）时才重新对齐，
+                    # 否则保持原有的同行/注释强制换行不变（含占位空字符串场景）
+                    if stmt != "":
+                        tidx_stmt = tlist.token_index(stmt)
+                        # 换行和缩进空格可能被词法分析拆成多个连续空白 token，需逐个回溯检查
+                        j, has_nl = tidx_stmt, False
+                        while True:
+                            j, w = tlist.token_prev(j, skip_ws=False)
+                            if not w or not w.is_whitespace:
+                                prev_tok = w
+                                break
+                            if self.n in w.value:
+                                has_nl = True
+                        direct_after_case = bool(prev_tok and prev_tok.match(T.Keyword, "CASE"))
+                        if has_nl and direct_after_case:
+                            _, _ = self._remove_prev_newline(tlist, tidx_stmt)
+                            cond_offset = offset_ if i < len(cases) - 1 else 0
+                            tlist.insert_before(stmt, self.nl(cond_offset))
 
                 if cond:  # 补齐when条件长度，即对齐then的左侧
                     ws = max_cond_width - condition_width[i]
@@ -548,6 +589,30 @@ class AlignedIndentFilter:
                     pidx += 1
 
     # ====添加的列表对刘处理
+    def _set_ws_before(self, container, ref, width):
+        """将 ref 前同行的空白替换为固定宽度，而非在原有空白基础上叠加。"""
+        idx = container.token_index(ref)
+        pidx, prev_ = container.token_prev(idx, skip_ws=False)
+        if prev_ and prev_.is_whitespace and self.n not in prev_.value:
+            if width > 0:
+                prev_.value = self.char * width
+            else:
+                del container.tokens[pidx]
+        elif width > 0:
+            container.insert_before(ref, sql.Token(T.Whitespace, self.char * width))
+
+    def _set_ws_after(self, container, ref, width):
+        """将 ref 后同行的空白替换为固定宽度，而非在原有空白基础上叠加。"""
+        idx = container.token_index(ref)
+        nidx, next_ = container.token_next(idx, skip_ws=False)
+        if next_ and next_.is_whitespace and self.n not in next_.value:
+            if width > 0:
+                next_.value = self.char * width
+            else:
+                del container.tokens[nidx]
+        elif width > 0:
+            container.insert_after(ref, sql.Token(T.Whitespace, self.char * width))
+
     def _align_identifierlist(self, tlist):
         """字段列表对齐，逗号对齐"""
 
@@ -563,6 +628,12 @@ class AlignedIndentFilter:
                 nidx, _ = token.token_next(idx=-1, skip_cm=True)  # 占位，防止order by中 a desc将a取为alias
                 _, alias = token.token_next_by(idx=nidx, i=sql.Identifier)
                 _, as_tk = token.token_next_by(m=(T.Keyword, "AS"))
+                if as_tk and alias is None:
+                    # AS 后的别名可能被词法分析误判为保留关键字（如 SCHEMA_NAME/TABLE_NAME），仅针对这种情况回退，
+                    # 字符串字面量等其他类型仍按无别名处理
+                    _, next_tk = token.token_next(token.token_index(as_tk), skip_cm=True)
+                    if next_tk is not None and next_tk.ttype is T.Keyword:
+                        alias = next_tk
 
                 # as 前/后若有换行，折叠回同一行（表达式 as 别名）
                 if as_tk:
@@ -584,23 +655,21 @@ class AlignedIndentFilter:
             max_alias_len = max(max_alias_len, alias_len if alias else 0)
             as_lists.append((as_offset, as_tk, alias_len, alias))
 
-        # 二次遍历进行对齐
+        # 二次遍历进行对齐，均以固定总宽度替换原有空白，避免原始输入的随意空白叠加导致错位
         for token, (as_offset, as_tk, alias_len, alias) in zip(tlist, as_lists):
-            # as对齐：有as的在as前添加，没有as的在identifier前添加, 都没有的加在最后
+            # as对齐：有as的在as前设置，没有as的在identifier前设置
             as_ws = max_as_offset - as_offset
+            # 既无as也无alias时，这部分宽度和逗号前的空白是同一处空白，需累加后一起设置
+            trailing_extra = 0
             if as_tk:
-                if as_ws:
-                    token.insert_before(as_tk, sql.Token(T.Whitespace, self.char * as_ws))
+                # 超长表达式会被120字符封顶，导致 as_ws 为负，至少保留 1 个分隔空格
+                self._set_ws_before(token, as_tk, max(1, 1 + as_ws))
             else:
-                as_ws = max_as_offset - as_offset
                 as_ws += as_placehold
-                if as_ws:
-                    if alias:
-                        token.insert_before(alias, sql.Token(T.Whitespace, self.char * as_ws))
-                    elif token.is_group:
-                        token.insert_after(token[-1], sql.Token(T.Whitespace, self.char * as_ws))
-                    else:
-                        token.parent.insert_after(token, sql.Token(T.Whitespace, self.char * as_ws))
+                if alias:
+                    self._set_ws_before(token, alias, max(1, 1 + as_ws))
+                else:
+                    trailing_extra = max(0, as_ws)
             # 逗号对齐：comma_first 模式下逗号在行首，不做末尾对齐
             if not self.comma_first and max_alias_len:
                 alias_ws = max_alias_len + (-alias_len if alias else 1)
@@ -608,11 +677,16 @@ class AlignedIndentFilter:
                     alias_ws = max(0, alias_ws - (as_offset - max_as_offset))
                 if token == tlist[-1]:
                     alias_ws += 1  # 添加末尾逗号的宽度
-                if alias_ws:
-                    if token.is_group:
-                        token.insert_after(token[-1], sql.Token(T.Whitespace, self.char * alias_ws))
-                    else:
-                        token.parent.insert_after(token, sql.Token(T.Whitespace, self.char * alias_ws))
+                alias_ws += trailing_extra
+                if token.is_group:
+                    self._set_ws_after(token, token[-1], alias_ws)
+                else:
+                    self._set_ws_after(token.parent, token, alias_ws)
+            elif trailing_extra:
+                if token.is_group:
+                    self._set_ws_after(token, token[-1], trailing_extra)
+                else:
+                    self._set_ws_after(token.parent, token, trailing_extra)
 
     def _align_create_columns(self, tlist):
         """Create Insert 语句中字段定义的对齐处理, 列表首位已对齐
@@ -710,6 +784,24 @@ class AlignedIndentFilter:
 
         return tidx, token
 
+    def _should_inline_after_keyword(self, tlist, tidx, token):
+        """判断关键字后是否应折叠为同行（关键字 + 右侧表达式）。"""
+        if token.match(T.Keyword, self.join_words, regex=True):
+            return True
+        if token.match(T.Keyword, self.by_words, regex=True):
+            return True
+
+        if token.match(T.Keyword, ["FROM", "WHERE", "HAVING"]):
+            return True
+
+        if token.match(T.Keyword, "ON"):
+            _, next_ = tlist.token_next(tidx, skip_cm=True)
+            if next_ and next_.match(T.Keyword, "COMMIT"):
+                return False
+            return True
+
+        return False
+
     def _split_kwds(self, tlist):
         # 遍历关键字, _next_token查找匹配T.Keyword,self.split_words的关键字token
 
@@ -730,6 +822,8 @@ class AlignedIndentFilter:
                 if prev_ and not prev_.is_whitespace:
                     tlist.insert_before(tidx, sql.Token(T.Whitespace, " "))
                     tidx += 1
+                # FROM 后若已存在换行，折叠为单空格
+                self._pull_inline(tlist, token, after=True)
                 tidx, token = self._next_token(tlist, tidx)
                 continue
 
@@ -750,6 +844,10 @@ class AlignedIndentFilter:
             tidx, _ = self._remove_prev_newline(tlist, tidx)
             # token_indent表示关键字占用的缩进, 会被扣除掉
             tlist.insert_before(token, self.nl(token_indent))
+
+            # 某些子句要求“关键字 + 右侧”同行，清理关键字后的已有换行。
+            if self._should_inline_after_keyword(tlist, tidx, token):
+                self._pull_inline(tlist, token, after=True)
 
             tidx += 1
             if token_notkey_ and token is first_keyword:
