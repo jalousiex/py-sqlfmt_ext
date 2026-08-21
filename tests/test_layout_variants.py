@@ -46,6 +46,14 @@ from tests.sqlfmt_test_helpers import format_with_entry_defaults
             "select a\nfrom -- source\nt\nwhere a = 1",
             "select a\n  from -- source\n       t\n where a = 1",
         ),
+        (
+            "create table t (id int primary key, display_name varchar(50) not null default '', created_at timestamp comment 'created')",
+            """create table t (
+       id           int         primary key                             ,
+       display_name varchar(50) not null    default ''                  ,
+       created_at   timestamp                          comment 'created'
+)""",
+        ),
     ],
     ids=(
         "keyword-alias",
@@ -55,6 +63,7 @@ from tests.sqlfmt_test_helpers import format_with_entry_defaults
         "as-inline-fold",
         "case-comment-boundary",
         "keyword-comment-boundary",
+        "ddl-column-layout",
     ),
 )
 def test_layout_variants(source, expected):

@@ -678,6 +678,50 @@ class AlignedIndentFilter:
                 token == tlist[-1],
             )
 
+    def _create_field_lines(self, tlist):
+        """收集 DDL/INSERT 字段定义的名称、类型、约束、默认值、注释和结尾 token。"""
+        field_lines = []
+        last_field = True
+        prev_idx = 0
+        end_idx, end_token = tlist.token_next_by(m=(T.Punctuation, ","), idx=prev_idx)
+        while end_idx:
+            field_line = []
+            for token_type in (
+                {},
+                {"t": T.Name.Builtin, "i": sql.Function},
+                {"m": (T.Keyword, ["NOT NULL", "NULL", "PRIMARY KEY"])},
+                {"m": (T.Keyword, ["DEFAULT"])},
+                {"m": (T.Keyword, "COMMENT")},
+            ):
+                if token_type:
+                    idx, token = tlist.token_next_by(idx=prev_idx, end=end_idx, **token_type)
+                else:
+                    idx, token = tlist.token_next(idx=prev_idx, skip_cm=True)
+                if idx:
+                    prev_idx = idx
+                field_line.append(token)
+
+            _, _ = self._remove_prev_newline(tlist, end_idx)
+            field_line.append(end_token)
+            field_lines.append(field_line)
+
+            prev_idx = end_idx
+            end_idx, end_token = tlist.token_next_by(m=(T.Punctuation, ","), idx=prev_idx)
+            if not end_idx and last_field:
+                end_idx, end_token = len(tlist.tokens) - 1, tlist.tokens[-1]
+                last_field = False
+        return field_lines
+
+    def _create_column_target(self, field_lines, index, column):
+        """计算一个 DDL 字段列的 token 和目标偏移。"""
+        tokens = [next((token for token in line[index:] if token), None) for line in field_lines]
+        max_offset = max(
+            self._get_offset(token) + (0 if line[index] else 1) for line, token in zip(field_lines, tokens)
+        )
+        if all(not token for token in column):
+            max_offset -= 1
+        return tokens, max_offset
+
     def _align_create_columns(self, tlist):
         """Create Insert 语句中字段定义的对齐处理, 列表首位已对齐
 
@@ -689,73 +733,10 @@ class AlignedIndentFilter:
             created_at  TIMESTAMP               DEFAULT CURRENT_TIMESTAMP
         )
         """
-        field_lines = []  # 存储字段行信息
-
-        # 收集字段信息
-        last_flag = True  # 是否未处理最后一个字段
-        prev_idx = 0  # 上一次查找起点
-        end_idx, token = tlist.token_next_by(m=(T.Punctuation, ","), idx=prev_idx)
-        while end_idx:
-            field_line = []  # 存储字段行信息
-            # 字段identifier, 肯定存在
-            idx, token_ = tlist.token_next(idx=prev_idx, skip_cm=True)
-            if idx:
-                prev_idx = idx
-            field_line.append(token_)
-
-            # 查找类型, 如varchar(2)当前组合为函数了
-            idx, token_ = tlist.token_next_by(idx=prev_idx, end=end_idx, t=T.Name.Builtin, i=sql.Function)
-            if idx:
-                prev_idx = idx
-            field_line.append(token_)
-
-            # 查找约束
-            idx, token_ = tlist.token_next_by(
-                idx=prev_idx, end=end_idx, m=(T.Keyword, ["NOT NULL", "NULL", "PRIMARY KEY"])
-            )
-            if idx:
-                prev_idx = idx
-            field_line.append(token_)
-
-            # 查找默认值
-            idx, token_ = tlist.token_next_by(idx=prev_idx, end=end_idx, m=(T.Keyword, ["DEFAULT"]))
-            if idx:
-                prev_idx = idx
-            field_line.append(token_)
-
-            # 查找注释
-            idx, token_ = tlist.token_next_by(idx=prev_idx, end=end_idx, m=(T.Keyword, "COMMENT"))
-            if idx:
-                prev_idx = idx
-            field_line.append(token_)
-
-            # 记录逗号位置，兜底，清理空白
-            _, _ = self._remove_prev_newline(tlist, end_idx)
-            field_line.append(token)
-            field_lines.append(field_line)
-
-            prev_idx = end_idx  # 更新查找起点
-            end_idx, token = tlist.token_next_by(m=(T.Punctuation, ","), idx=prev_idx)
-            if not end_idx and last_flag:  # 处理最后一个字段
-                end_idx, token = len(tlist.tokens) - 1, tlist.tokens[-1]
-                last_flag = False
-
-        # 应用对齐，对tlist的切片修改无效, 处理前置空白更合理，元素不一定存在
-        field_cols = list(zip(*field_lines))  # 解包为字段行列表
-        for j, col in enumerate(field_cols):  # 按元素列遍历, 最后一列是兜底的逗号
-            tokens = []
-            max_offset = 0
-            # 从每行中解出当前列开始的元素切片, 过滤掉None值，再取首个元素
-            for line in field_lines:
-                tokens.append(next((t for t in line[j:] if t), None))
-                # 使用了后一元素的，添加1个空白长度
-                max_offset = max(max_offset, self._get_offset(tokens[-1]) + (0 if line[j] else 1))
-            # 如果col全是None，则扣减不必要的空白长度
-            if all(not t for t in col):
-                max_offset -= 1
-
-            for i, tk in enumerate(tokens):  # 按行遍历，元素列表位置即行位置
-                # 从当前索引的位置开始, 遍历后续token, 过滤掉None值 直到找到第一个有效token
+        field_lines = self._create_field_lines(tlist)
+        for index, column in enumerate(zip(*field_lines)):
+            tokens, max_offset = self._create_column_target(field_lines, index, column)
+            for tk in tokens:
                 offset = self._get_offset(tk)
                 ws = max_offset - offset
                 if ws > 0:
