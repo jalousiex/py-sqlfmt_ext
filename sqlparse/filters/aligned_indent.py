@@ -805,6 +805,9 @@ class AlignedIndentFilter:
                 or token.match(T.Keyword, self.by_words, regex=True)
                 or token.match(T.Keyword, r"LATERAL\s+VIEW", regex=True)
             ):
+                # 折叠 token 内部已有的换行（如 lexer 将 "left\n   join" 合并为单 token）
+                if self.n in token.value:
+                    token.value = " ".join(token.value.split())
                 token_indent = token.value.split()[0]
             elif token is token_notkey_:
                 token_indent = 1
