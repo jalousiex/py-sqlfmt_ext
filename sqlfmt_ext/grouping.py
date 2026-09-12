@@ -562,6 +562,73 @@ def _trim_clause_tail(tlist):
     return tlist
 
 
+def _call_head(token):
+    """``name(...)`` 里的「名字」部分；不是可补包的形态返回 ``None``。
+
+    接受两种：裸 ``Name``（我们这边没被包过的）与 ``Identifier[Name]``（``group_identifier``
+    包过一层，如 ``hash``）。**排除子句关键字**（``from (select …)`` / ``where (…)`` 这类
+    括号不是函数调用）。
+    """
+    if isinstance(token, sql.Identifier):
+        if len(token.tokens) == 1 and token.tokens[0].ttype is not None and token.tokens[0].ttype in T.Name:
+            return token
+        return None
+    if token.ttype is not None and token.ttype in T.Name:
+        return token
+    if token.ttype is not None and token.ttype in T.Keyword and not _is_clause_keyword(token):
+        return token
+    return None
+
+
+def _wrap_bare_calls(tlist):
+    """把本层「``Name``/``Identifier[Name]`` + 紧随的 ``Parenthesis``」包成 ``sql.Function``。"""
+    for sgroup in list(tlist.get_sublists()):
+        _wrap_bare_calls(sgroup)
+
+    idx = 0
+    while idx < len(tlist.tokens):
+        if _call_head(tlist.tokens[idx]) is None:
+            idx += 1
+            continue
+        scan = idx + 1
+        while scan < len(tlist.tokens) and tlist.tokens[scan].is_whitespace:
+            scan += 1
+        if scan >= len(tlist.tokens) or not isinstance(tlist.tokens[scan], sql.Parenthesis):
+            idx += 1
+            continue
+        group = sql.Function(tlist.tokens[idx:scan + 1])
+        group.parent = tlist
+        tlist.tokens[idx:scan + 1] = [group]
+        _refresh_values(group)
+        idx += 1
+    return tlist
+
+
+def _wrap_create_table_calls(stmt):
+    """U13：``CREATE TABLE``（且无 ``AS``）时官方 ``group_functions`` 整条早退，一个
+    ``Function`` 都不包。
+
+    官方的条件是「本层同时有 ``CREATE``、``TABLE`` 且没有 ``AS`` → ``return``」；旧 fork
+    没有这个条件，所以 ``duplicate key(id,name)`` / ``range(date_trunc(p_dt,'month'))`` /
+    ``hash(ID)`` 在 fork 里都是 ``Function``，到了官方这边退化成裸 ``Name`` + ``Parenthesis``
+    （``key``/``hash`` 还会被 ``group_identifier`` 包成 ``Identifier``），于是被
+    ``_process_parenthesis`` 的字段列表分支按 ``(a, b, c)`` 展开（``ddl/sqltest0_s01``）。
+
+    这里在官方分组**之后**照着补一层。放在之后而不是之前：之前括号还没成组，得先替官方跑
+    ``group_parenthesis``，那会打乱官方各步骤的先后假设；之后只做一次纯包装，风险小得多。
+    """
+
+    top = stmt
+    while isinstance(top.parent, sql.TokenList):
+        top = top.parent
+    values = {token.value.upper() for token in top.tokens if not token.is_whitespace}
+    if not ({"CREATE", "TABLE"} <= values and "AS" not in values):
+        return stmt
+
+    _wrap_bare_calls(stmt)
+    return stmt
+
+
 def _last_function_of(token):
     """沿「最后一个非空白子 token」下钻，返回其中的 ``Function``；找不到返回 ``None``。"""
     while isinstance(token, sql.TokenList):
@@ -699,6 +766,8 @@ def group(stmt):
     _pre_wrap_object_name(stmt)  # 必须在官方分组之前
     stmt = official.group(stmt)
     _walk(stmt)
+    # U13：CREATE+TABLE（无 AS）时官方不包 Function，这里补包（必须在官方分组之后）
+    _wrap_create_table_calls(stmt)
     # 尾逗号吞掉子句关键字（U15）：必须在 ``_walk`` 之后 —— ``_group_level`` 会按
     # 「逗号 + 真实项」再归并一次，先退出去会被它重新吞回来。
     _trim_clause_tail(stmt)
