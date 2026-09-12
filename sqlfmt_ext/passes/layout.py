@@ -445,6 +445,55 @@ class LayoutPass(AlignMixin):
             widths.append(cond_len)
         return widths, max_width
 
+    @staticmethod
+    def _get_cases(tlist, skip_ws=False):
+        """本项目口径的 ``Case.get_cases``：为 CASE 内的 ``--`` 注释保留占位。
+
+        官方 0.6.0 的 ``Case.get_cases`` 没有注释分支，CASE 内的行注释会被直接
+        并入条件；注释被换行后条件看起来就不像紧跟在 CASE 之后（见
+        ``case/sqltest4_s01``）。这里按本项目口径重写同一遍历，只在本 pass 内使用，
+        不修改官方类。
+        """
+        CONDITION = 1
+        VALUE = 2
+
+        ret = []
+        mode = CONDITION
+        for token in tlist.tokens:
+            if token.match(T.Keyword, "CASE"):
+                continue
+            elif token.ttype in T.Whitespace:
+                # case 后 when 前的空白需要跳过
+                if skip_ws or not ret or not ret[-1][0]:
+                    continue
+            elif token.value.startswith("--"):
+                # 需要一个占位，否则被换行后条件被认为跟在 case 后没有处理
+                if not ret:
+                    ret.append((None, [""]))
+                if not ret[-1][0]:
+                    continue
+            elif token.match(T.Keyword, "WHEN"):
+                ret.append(([], []))
+                mode = CONDITION
+            elif token.match(T.Keyword, "THEN"):
+                mode = VALUE
+            elif token.match(T.Keyword, "ELSE"):
+                ret.append((None, []))
+                mode = VALUE
+            elif token.match(T.Keyword, "END"):
+                mode = None
+
+            # First condition without preceding WHEN
+            if mode and not ret:
+                ret.append(([], []))
+
+            if mode == CONDITION:
+                ret[-1][0].append(token)
+            elif mode == VALUE:
+                ret[-1][1].append(token)
+
+        return ret
+
     def _process_case(self, tlist):
         # 先处理为深度遍历，后处理为广度遍历，处理注释换行
         self._process_default(tlist, stmts=False)
@@ -452,7 +501,7 @@ class LayoutPass(AlignMixin):
         # 为了计算注释换行后长度，需要考虑到行首的全部偏移
         case_offset = self._get_offset(tlist.token_first(), relative=False)
         offset_ = len("case ")
-        cases = tlist.get_cases()  # 跳过空白后注释的换行无法识别
+        cases = self._get_cases(tlist)  # 跳过空白后注释的换行无法识别
         # 折叠 when/then 中非注释强制的换行，避免遗留原始输入的随意折行
         for cond, value in cases:
             if cond:

@@ -135,9 +135,9 @@ S7 删除 fork 后该 conftest 一并删除。
 | U2 | 官方 `lexer.Lexer` | 模块级单例，`FilterStack.run` 硬引用 | ✅ `DialectLexer` 子类 + `FilterStack.run` 覆写（只改 lexer 来源） |
 | U3 | 官方 `TokenList.token_next_by` | 没有 `_reverse` 参数 | ✅ 用 `_token_prev_by` 等价实现 |
 | U4 | 官方 `IdentifierList.get_identifiers` | 不过滤注释（fork 过滤） | ✅ 在 `_process_identifierlist` 里过滤 |
-| U5 | 官方 `Case.get_cases` | fork 增加了 `--` 注释占位逻辑 | ⏳ 未处理，影响 CASE 内注释 |
-| U6 | 官方 `Where.M_CLOSE` / `TypedLiteral.M_CLOSE` | fork 移除了 `GROUP BY`/`ORDER BY`/`LIMIT`/`UNION`，并给数字补 `M_CLOSE` | ⏳ 未处理，影响 WHERE 分组边界 |
-| U7 | 官方 `NameAliasMixin.get_real_name` | fork 取**第一个**点号，官方取最后一个 | ⏳ 影响 `a.b.c` 别名 |
+| U5 | 官方 `Case.get_cases` | fork 增加了 `--` 注释占位逻辑（官方无注释分支，CASE 内行注释被并进条件） | ✅ 在 `LayoutPass._get_cases` 里按本项目口径重写同一遍历（不动官方类）；`case/sqltest4_s02` 因此转正 |
+| U6 | 官方 `Where.M_CLOSE` / `TypedLiteral.M_CLOSE` | 实测官方仅在 `Where.M_CLOSE` 里**多**一个 `'INTERSECT'`，`TypedLiteral.M_CLOSE` 相同 | ✅ 结论：无需补偿。现有 fixture 的 WHERE 内不含 `INTERSECT`/`ORDER BY` 等，分组边界一致 |
+| U7 | 官方 `NameAliasMixin.get_real_name` | fork 取**第一个**点号，官方取最后一个 | ✅ 结论：无需补偿。全量检索官方包，`get_real_name`/`get_name` 已无 filter 调用点；本项目 pass 也不调用 |
 | U8 | 官方 `statement_splitter` / `lexer.find_delimited_spans` | 0.6.0 是新实现（嵌套块、美元引号） | ✅ 对现有 fixture 无影响 |
 | U9 | 官方 `grouping.valid_next` | fork 允许关键字作字段名 | ⏳ 未处理，暂未观察到影响 |
 
@@ -160,7 +160,7 @@ S7 删除 fork 后该 conftest 一并删除。
 | L2 | **括号内字段列表展开**：CREATE / ALTER / INSERT 的 `(cols)` 逐列换行 | 7 个 | `ai.py::_process_parenthesis`(204) |
 | L3 | **语句 / CTE 换行**：`as with ... as (` 中 `as` 后换行 | 3 个 | `ai.py::_split_statements`(899)、`_process_statement`(197) |
 | L4 | **多 LATERAL VIEW 各自分行** | 1 个 | `ai.py::_is_lateral_view_list`(160)、`_split_kwds`(812) |
-| L5 | **CASE 首个 WHEN 独占一行** | 1 个 | `ai.py::_process_case`(427) |
+| L5 | **CASE 首个 WHEN 独占一行**（⚠️ 旧实现在 `has_nl and direct_after_case` 上判定，即**依赖输入换行**；官方 strip 之下没有该换行，需重新定义为结构性规则，或在 S7 重定基线） | 1 个 | `ai.py::_process_case`(427) |
 | L6 | **`select * from` 折叠同行** | 1 个 | `ai.py::_is_simple_select_star`(870) |
 | L7 | **`ON COMMIT` 刻意分行**（白名单） | 1 个 | `ai.py::_normalize_newlines`(87) 白名单 |
 
@@ -207,7 +207,7 @@ A1  (6): aggregate/s01 s02 | debug/sqldebug_s01 | dml/s07 s08 | window/s02
 |---|---|---|---|---|
 | **S0** | 计划落地 + 骨架 + 对拍进度条 | — | 1 / 30 | ✅ 完成 |
 | **S1** | 把布局引擎移植到官方 0.6.0 之上：方言 lexer、分词补丁、`LayoutPass`（断行+对齐规则集）、摘掉官方换行 filter | 骨架跑通且不崩 | **4 / 27** | ✅ 完成 |
-| **S2** | 上游语义差异补偿 U5–U7（`Case.get_cases` 注释占位、`Where.M_CLOSE`、`get_real_name`） | — | — | ⏳ 待做，**建议先做**（影响面最大） |
+| **S2** | 上游语义差异补偿 U5–U7（`Case.get_cases` 注释占位、`Where.M_CLOSE`、`get_real_name`） | 实测收敛为 1 项 | 4 / 27 | ✅ 完成：U5 落地；U6/U7 经检索确认无影响（见 §3.4）。`case/sqltest4_s02` 转正，`s03` 转 KNOWN_DIFF（等 L5 结构性规则） |
 | **S3** | `LayoutPass` L1 注释强制换行（确定性规则：`--` 与 `/*-*/` 强制断行） | +12 | 16 / 15 | ⏳ 待做（最大单项） |
 | **S4** | `LayoutPass` L2 括号字段列表展开 | +7 | 23 / 8 | ⏳ 待做 |
 | **S5** | `LayoutPass` L3 语句/CTE 换行 + L4 多 LATERAL VIEW | +2 | 25 / 6 | ⏳ 待做 |
@@ -276,3 +276,4 @@ A1  (6): aggregate/s01 s02 | debug/sqldebug_s01 | dml/s07 s08 | window/s02
 | 2026-09-12 | 初稿：确立方案 A（官方包作 pip 依赖）、四段管线、6 组规则拆分、S0–S7 步骤拆分 |
 | 2026-09-12 | S1 落地后的修订：①官方 `AlignedIndentFilter` 不再进 stack，改由 `LayoutPass` 独占换行骨架；②对齐规则改为 mixin 组合而非独立后置 pass；③新增 §3.4 上游语义差异清单（U1–U9），步骤表按实际成本重排（新增 S2 语义补偿）。 |
 | 2026-09-12 | §4「明确不移植」更正：`*_newline` / `_pull_inline` / `_remove_prev_newline` 等函数**保留**——在官方 strip 之下它们不再承担「擦除输入换行」的职责，而是管理本 pass 自己插入的空白，属于固有工具；真正被删掉的只有 `_flatten_up_to_token` 的调用语义变化与旧 fork 的 strip 魔改。 |
+| 2026-09-12 | S2 完成：①U5 以 `LayoutPass._get_cases` 本地实现补偿（对拍验证：CASE 条目形状与 fork 逐项一致），②U6/U7 实测无影响、仅记录不动代码；③发现 L5「CASE 首个 WHEN 独占一行」在旧实现里依赖输入换行（`has_nl`），属**不收敛**行为，需在 S5 定结构性规则或 S7 重定基线，`case/sqltest4_s03` 暂列 `KNOWN_DIFF`。 |

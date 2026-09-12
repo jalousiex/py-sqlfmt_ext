@@ -15,12 +15,16 @@ _ALIGN = "列对齐（AlignPass）未实现"
 _COMMENT = "注释强制换行规则（LayoutPass）未实现"
 _FIELD_LIST = "括号内字段列表未展开（LayoutPass）"
 _STMT_SPLIT = "语句/CTE 换行规则（LayoutPass）未实现"
+_CASE_FIRST_WHEN = "CASE 首个 WHEN 布局待定结构性规则（LayoutPass L5）"
 
 # 未复现用例 → 原因（修好一个删一个）
 KNOWN_DIFF = {
     # --- LayoutPass：注释强制换行（覆盖最多，优先做） ---
     "case/sqltest4_s01": _COMMENT,
-    "case/sqltest4_s02": _COMMENT,
+    # s03 的期望输出（case 后首个 when 独占一行）在旧实现里依赖**输入换行**判定，
+    # 属已知不收敛用例；官方 strip 之下没有该换行可用，必须先定下结构性规则
+    # （L5）或重定基线，暂列 KNOWN_DIFF。
+    "case/sqltest4_s03": _CASE_FIRST_WHEN,
     "comma/sqltest7_s01": _COMMENT,
     "comma/sqltest7_s02": _COMMENT,
     "cte/sqltest2_s01": _COMMENT,
