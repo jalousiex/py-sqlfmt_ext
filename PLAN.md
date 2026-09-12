@@ -103,10 +103,10 @@ S7 删除 fork 后该 conftest 一并删除。
 | 仅空白宽度不同 | 6 / 31 |
 | 换行骨架不同 | 24 / 31 |
 
-> **当前进度（2026-09-12，S5c 已定性）**：`pytest tests_migration/ -q` → **`23 passed, 8 xfailed`**
+> **当前进度（2026-09-12，S5 清零）**：`pytest tests_migration/ -q` → **`24 passed, 7 xfailed`**
 > **+ 1 条有意偏离**（`case/s03`，已是断言项，见 §4「对旧 fork 的有意偏离清单」）。
-> 剩余 8 个待做：**S5 折行 1**（`cte/s02` = U14）与 **S6 列对齐 7**
-> （`case/s01`、`ddl/s01 s02`、`nested/s01 s02`、`window/s01 s03`），见 §4 与 §9.3。
+> 剩余 7 个**全部是 S6 列对齐**（`case/s01`、`ddl/s01 s02`、`nested/s01 s02`、`window/s01 s03`），
+> 见 §4 与 §9.3。
 > （空白归一化 U11 曾一次性把 8 个用例从「待实现规则」变成逐字节一致——它们的首处差异
 > 本来就是该处 ±1 列宽，不是换行骨架差异，见 §3.5、§9.2。）
 
@@ -125,11 +125,11 @@ S7 删除 fork 后该 conftest 一并删除。
 | 套件 | 命令 | 现状 |
 |---|---|---|
 | 主套件（旧 fork） | `.venv\Scripts\python.exe -m pytest tests/ -q` | `170 passed, 6 xfailed` |
-| 对拍进度条（新外挂） | `.venv\Scripts\python.exe -m pytest tests_migration/ -q` | `23 passed, 8 xfailed` + 1 有意偏离 |
+| 对拍进度条（新外挂） | `.venv\Scripts\python.exe -m pytest tests_migration/ -q` | `24 passed, 7 xfailed` + 1 有意偏离 |
 | 诊断报告 | `.venv\Scripts\python.exe _tmp_gap.py` | 逐用例首处差异 + 异常容错 |
 
-已复现 23：以 §4 的规则→用例映射与 `tests_migration/test_parity.KNOWN_DIFF` 为准
-（后者只剩 8 条未复现条目，且逐条带根因；另有 1 条**有意偏离**登记在
+已复现 24：以 §4 的规则→用例映射与 `tests_migration/test_parity.KNOWN_DIFF` 为准
+（后者只剩 7 条未复现条目，且逐条带根因；另有 1 条**有意偏离**登记在
 `test_parity.DEVIATIONS`，是断言项而非待做项，见 §4。不再手工维护重复名单）。
 
 ### 3.4 上游 0.6.0 与旧 fork 的语义差异清单（迁移的真实成本）
@@ -245,9 +245,8 @@ fork 侧 `ws=' ' ws_idx=1`）；两侧 `_identifier_layouts` 的汇总值**完�
 ```
 S6 列对齐 (7): case/s01 | ddl/s01 | ddl/s02 | nested/s01 | nested/s02
               window/s01 | window/s03
-S5 结构性折行 (1): cte/s02（U14：`)` 与 `over` 之间的注释挡住官方并入 Function）
 
-合计 7+1 = 8，与当前 8 个 xfailed 一一对应
+合计 7，与当前 7 个 xfailed 一一对应
 
 有意偏离 (1): case/s03（`case` 与首个 `when` 同行 —— 旧基线那处折行依赖输入换行，
              按结构性口径重定，见下方清单）
@@ -308,7 +307,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | **S3** | `LayoutPass` L1 注释强制换行（结构性规则：`--` 与 `/*-*/` 强制断行、连续注释各自成行） | +11 | **16 / 15** | ✅ 完成（U11 + S3c + U9 分组补偿，L1 已清零） |
 | **S4** | `LayoutPass` L2 括号字段列表展开（真因 = 分组口径 U12） | +5 | 21 / 10 | ✅ 完成 |
 | **S5a** | `policy` LATERAL VIEW 分词兜底（L4 多 `lateral view` 各自分行） | +1 | **22 / 9** | ✅ 完成 |
-| **S5b** | U14：`)` 与 `over` 之间的注释挡住官方把 `OVER` 并入 `Function`（`cte/s02`） | +1 | — | ⏳ 下一段 |
+| **S5b** | U14 + `_create_guard` 边界 + 注释串按层级缩进（`cte/s02`） | +2 | **24 / 7** | ✅ 完成 |
 | **S4c** | 官方 `group_functions` 的 CREATE+TABLE 早退严于 fork（`ddl/s01`） | +1 | — | ⏳ 可并入 S6 |
 | **S6** | `AlignPass` 列对齐收尾（注释列 / 末尾逗号 / `as` 列 / `from` 缩进） | +7 | **31 / 0** | ⏳ 待做 |
 | **S7** | 收敛 + 幂等 + 入口切换 + 删 fork + 改 README + 处置有意偏离清单 | 新实现通过全部 4 套测试 | — | ⏳ 待做（`AGENTS.md` 已按失败模式修订过） |
@@ -396,6 +395,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | 2026-09-12 | **U11 落地，对拍 `5/26` → `14/17`**：①新增 `sqlfmt_ext/whitespace.py::merge_whitespace_runs`；②新增 `sqlfmt_ext/filters/whitespace.py::StripWhitespaceFilter`，在官方 `_stripws()` 之前合并空白段，并换装进 stack（`stack._swap_whitespace_filter`）；③`LayoutPass.process` 入口保留幂等兜底调用。修掉两类问题：`_set_adjacent_ws` 改写错 token（列宽 +1）与官方 `_stripws_identifierlist` 只删 1 个空 token（逗号前残留 1 空格）。8 个用例转正后**重新校准 §4 规则→用例映射**：L3/L6/L7 整条消失，L1 12→8、L2 7→6、A1 6→1。 |
 | 2026-09-12 | 工具整理：`_tmp_cmp.py` 的两侧选项与主套件口径对齐（去掉多传的 `comma_align`、按 `;` 拆分后以空行拼接、支持 `@相对路径` 直接喂 fixture）；`_tmp_*.py` 加入 `.gitignore`（迁移期临时脚本，S7 统一删除）。 |
 | 2026-09-12 | **S5a 落地，对拍 `21/10` → `22/9`**：`policy.MULTIWORD_REGEX` 在 `LATERAL VIEW <白名单 UDTF>` 之后补一条兜底 `(LATERAL\s+VIEW)\b` —— UDTF 不在白名单时（如 `EXPLODE_JSON_ARRAY_JSON`）`lateral`/`view` 会各自成词，`split_words` 的 `LATERAL\s+VIEW` 对两个单词 token 都匹配不上（`match` 是拿整条正则去 search 单个 token 的 normalized），多个 `lateral view` 全被挤在 `from` 行（且旧 fork 靠输入换行侥幸通过，属已知不收敛用例）。→ 转正 `dml/sqltest1_s06`。 |
+| 2026-09-12 | **S5 清零：`cte/sqltest2_s02` 转正，对拍 `23/8` → `24/7`**。该用例一共三层根因：①U14（`OVER` 隔着注释时官方不并进 `Function`）→ `grouping._attach_over_to_functions`；②`_create_guard` 只拿 `SELECT` 当边界，把 `WITH` 之后本该正常建列表的 CTE 体括号一起跳掉 → 改成「`with`/`select`/`values` 中最先者」；③**注释串缩进口径（用户定）**：「原本在列 0 的保持不变，其它的随所在层级对齐」→ `_break_between_comments` 用 `self.nl(0).value`（= 换行 + 本层缩进）代替只剩换行，`_process_comment` 的括号支在前一段「以注释结尾」时改取那段内容的偏移。踩坑：`sql.Comment` 也是 `TokenList`，判「以注释结尾」必须先判自身；第 ③ 条必须收窄否则踩 `comma/sqltest7_s01`。 |
 | 2026-09-12 | **S5b 收口（U14 + `_create_guard` 边界）**：`cte/sqltest2_s02` 从 18/18 行差异降到 **1/22 行**（且全部为空白宽度）。第二个根因是 `_create_guard` 只拿 `SELECT` 当边界，把 `WITH` 之后本该正常建列表的 CTE 体括号一起跳掉了；改成 fork 原文口径「with/select/values 中最先出现的那个」（`WITH` 是 `T.Keyword.CTE`，要用 `ttype in T.Keyword` 判）。残差 1 行 = 注释串缩进，取证表明旧 fork 那处是**输入换行+空格驱动**（单行输入下它压根不拆注释串），需口径决策，见 §9.3「S5b」。两套件无回归：`23/8`、`170/6`。 |
 | 2026-09-12 | **S5b 分组侧落地（U14）**：新增 `grouping._attach_over_to_functions` —— 官方 `group_functions` 用「下标相邻」判定是否把 `OVER` 并进 `Function`，`)` 与 `over` 之间夹注释时判定失败；补偿把它搬回 `Function` 并还原 fork 的列表项形状（显式 `as rn` 与隐式 `over(…) rn` 两种写法都覆盖）。孤立复现已与期望**逐字节相同**；整条 `cte/sqltest2_s02` 的残差是 **CTE / `create view` 上下文**里同一个列表不展开，属另一根因（入口已写在 §9.3）。两套件无回归：`23/8`、`170/6`。 |
 | 2026-09-12 | **S5c 定性（用户拍板「按 (i) 做」）**：`case` 与首个 `when` 取**同行**口径，`case/sqltest4_s03` 登记为**有意偏离**（`test_parity.DEVIATIONS`：理由 + 对 canonical 的定向变换，**断言**而非 xfail，另加「变换失效即报错」守卫），对拍 `22/9` → **`23/8` + 1 条有意偏离**。**没有改任何 fixture、没动主套件**（s03 的 canonical 同时钉住旧 fork 的输出回归测试，改了主套件立刻红）。§4 新增「对旧 fork 的有意偏离清单」，S7 交付时按此清单向用户交代。 |
@@ -406,14 +406,14 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 
 ## 9. 断点续做（下一次会话从这里开始）
 
-> 落盘时间：2026-09-12（第六轮），S1–S4、S5a、S5c 已完成，**对拍 23/8 + 1 条有意偏离**，
-> 下一段 = S5b（U14）。
+> 落盘时间：2026-09-12（第七轮），**S1–S5 全部完成**，**对拍 24/7 + 1 条有意偏离**，
+> 下一段 = S6（列对齐 7 个用例）。
 
 ### 9.1 复现当前状态
 
 ```powershell
 .venv\Scripts\python.exe -m pytest tests/ -q            # 170 passed, 6 xfailed（旧 fork，必须保持）
-.venv\Scripts\python.exe -m pytest tests_migration/ -q  # 23 passed, 8 xfailed（新外挂，进度条；另有 1 条有意偏离是断言项）
+.venv\Scripts\python.exe -m pytest tests_migration/ -q  # 24 passed, 7 xfailed（新外挂，进度条；另有 1 条有意偏离是断言项）
 .venv\Scripts\python.exe _tmp_check.py                  # 逐用例精确 diff（当前唯一主力诊断）
 ```
 
@@ -445,7 +445,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 |---|---|---|---|---|
 | S4 | L2 括号字段列表展开（真因 = 分组口径） | `dml/s01 s02 s04`、`ddl/s03 s06` | `grouping.py` + `passes/layout.py::_process_parenthesis` | ✅ 完成（16 → 21） |
 | S5a | L4 多 `lateral view` 各自分行 | `dml/s06` | `policy.MULTIWORD_REGEX` | ✅ 完成（21 → 22） |
-| S5b | U14：`)` 与 `over` 之间的注释挡住官方并入 `Function` | `cte/s02` | `grouping.py` + `passes/layout.py` 的 `Over` 处理 | ⏳ 下一段 |
+| S5b | U14 + `_create_guard` 边界 + 注释串按层级缩进 | `cte/s02` | `grouping.py` + `passes/layout.py`（`_break_between_comments` / `_process_comment`） | ✅ 完成（22 → 24） |
 | S4c | 官方 `group_functions` 的 CREATE+TABLE 早退严于 fork | `ddl/s01` | `grouping.py` + `passes/layout.py::_process_parenthesis` | ⏳ 可与 S6 合并 |
 | S5c | `case` 与首个 `when` 同行（口径重定 + 有意偏离登记） | `case/s03` | `tests_migration/test_parity.py::DEVIATIONS` | ✅ 完成（22 → 23） |
 | S6 | 列对齐收尾（末尾逗号列 / `as` 列 / 注释列 / `from` 缩进） | `case/s01`、`ddl/s01 s02`、`nested/s01 s02`、`window/s01 s03` | `passes/align.py` | ⏳ |
@@ -557,15 +557,28 @@ fork 明确会正常建列表）被一起跳掉、内层列表被摊平。fork �
 **验证**：修完守卫边界后，`cte/sqltest2_s02` 从「18/18 行差异」降到
 **「1/22 行差异，且全部是空白宽度」**；关掉守卫做对照会破 2 个 DDL 用例，说明守卫本身必须留。
 
-**残差 = 1 行，需口径决策（与 S5c 同类）**：期望第三个注释 `       --and t1.Rowkey=1` 缩进 7，
-本实现是列 0。取证表明旧 fork 在这条上是**输入换行 + 输入空格驱动**的：
-- 单行输入 `… where 1 = 1 --a --b --c` → fork **根本不拆注释串**（整串留在一行）；
-- 输入 `--a\n--b\n       --c` → fork 输出 ` --c`（7 个空格被压成 1 个），与「结构性缩进」对不上。
+**第三个根因（用户定的口径）：注释串里「原本不在列 0」的那些要按所在层级缩进。**
+修完前两个根因后只剩 1 行：期望 `       --and t1.Rowkey=1`（缩进 7），本实现是列 0。
 
-也就是说这一行的期望值无法用结构性规则复现，属 C4 类不可移植行为。
-可选项与 S5c 相同：①按本实现口径（注释串统一列 0）把该 fixture 登记为**有意偏离**；
-②或定一条结构性规则（例如「注释串中紧跟收尾括号的最后一条按当前缩进」）再核对 fork 反例。
-**动手前先与用户确认。**
+用户口径（2026-09-12 原话）：「这里不是都顶列 0 的，是原本是列 0 的，保持不变，
+其它的随所在层级对齐。」落地点在 `passes/layout.py`：
+
+1. `_break_between_comments` 里「两条注释之间有空白」那一支原来把空白写成 `self.n`
+   （只剩换行 → 列 0），改成 `self.nl(0).value` —— `nl(0)` 的语义**本就是**「换行 + 本层缩进」
+   （`self.n + self.char * self.leading_ws`）；原本贴行首的（前一条注释自带 `\n`）走 `elif`
+   分支保持列 0 不动 ✓ 正是口径里的「原本是列 0 的保持不变」。
+2. `_process_comment` 的 `hasattr(plist, "M_OPEN")` 支：以前一律取**括号内容的起始列**。
+   当注释组**前面还有内容**、且那段内容**以注释结尾**（`_ends_with_comment`）时，
+   改取那段内容的偏移 —— 该注释是上一条注释串的延续，应与它同层级。
+   例：CTE 体括号里的 `--c`，父是括号（内容起始列 0），但它该对齐到 `where 1 = 1` 内容的 7。
+
+**坑（两个，都踩过）**：
+- `sql.Comment` 自己也是 `TokenList`，`_ends_with_comment` 若先往下钻会落到
+  `Token.Comment.Single` 上判成 False —— 必须先判「本身就是注释」。
+- 第 2 条必须收窄到「前一段以注释结尾」：放宽会踩 `comma/sqltest7_s01`（那里前一段是逗号、
+  注释是行尾注释，误用该偏移会把 `)` 行推歪，`24 spaces → 37 spaces`）。
+
+**结果**：`cte/sqltest2_s02` 与期望**逐字节一致**，对拍 `23/8` → **`24/7`**。
 
 **S5c 已收（2026-09-12，用户拍板口径）→ 对拍 `22/9` 变 `23/8` + 1 条有意偏离**：
 `case` 与首个 `when` **同行**（`case when b in ('X','Y') then …`），把 `case/sqltest4_s03` 登记为

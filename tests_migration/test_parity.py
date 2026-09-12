@@ -22,16 +22,6 @@ _ALIGN = "列对齐（AlignPass）未实现"
 
 # 未复现用例 → 原因（修好一个删一个）
 KNOWN_DIFF = {
-    # --- S5：结构性折行 ---
-    # 窗口函数断行：期望 `ROW_NUMBER() --` 独占一行、`over(...)` 另起。
-    # U14 = 官方 group_functions 用「下标相邻」判定要不要把 OVER 并进 Function，
-    # `)` 与 `over` 之间**隔着注释**时判定失败 → 注释把列表打断、列表不展开。
-    # 分组侧已补偿（`grouping._attach_over_to_functions`），另修掉 `_create_guard` 的
-    # 边界（`with` 之后的括号不该被跳过）→ 整条用例只剩 **1 行**差异：
-    # 期望 `       --and t1.Rowkey=1`（缩进 7），本实现是列 0。
-    # 旧 fork 在这条上是**输入换行+空格驱动**的（单行输入下它压根不拆注释串），
-    # 属 C4 类不可移植行为，需先定口径（同 S5c 的做法），见 PLAN §9.3「S5b」。
-    "cte/sqltest2_s02": "U14 已修；残差 1 行 = 注释串缩进（旧 fork 依赖输入空白）",
     # --- S6：列对齐（含注释列 / 末尾逗号列 / from 缩进） ---
     "case/sqltest4_s01": _ALIGN,
     # ddl/s01 除对齐外还差一条：官方 `group_functions` 对 CREATE+TABLE 提前 return，

@@ -598,12 +598,36 @@ class LayoutPass(AlignMixin):
             if prev_.is_whitespace:
                 if self.n in prev_.value:
                     continue
-                prev_.value = self.n
+                # 两条注释之间有空白 → 这条注释原本不贴行首（不是列 0），
+                # 按**所在层级**缩进（`nl(0)` 的语义就是「换行 + 本层缩进」）；
+                # 原本就贴行首的走下面的 `elif`，保持列 0 不动。
+                prev_.value = self.nl(0).value
             elif self._is_comment(prev_):
                 # `--` 注释的 token 自带行尾换行，此时已经在新行行首
                 if prev_.value.endswith(self.n):
                     continue
                 tlist.insert_before(token, self.nl(0))
+
+    @staticmethod
+    def _ends_with_comment(token):
+        """``token`` 的最后一个非空白后代是不是注释（注释串延续的标志）。
+
+        注意 ``sql.Comment`` 自己也是 ``TokenList``：进到它内部会掉到
+        ``Token.Comment.Single`` 上，所以必须先判「本身就是注释」再往下钻。
+        """
+        while True:
+            if isinstance(token, sql.Comment) or token.ttype in T.Comment:
+                return True
+            if not isinstance(token, sql.TokenList):
+                return False
+            last = None
+            for child in reversed(token.tokens):
+                if not child.is_whitespace:
+                    last = child
+                    break
+            if last is None:
+                return False
+            token = last
 
     def _process_comment(self, tlist):
         # 深度遍历时的注释要基于父对象处理，在后一token前换行，含新增的强制换行
@@ -675,7 +699,26 @@ class LayoutPass(AlignMixin):
         # 父对象是括号、Over，取其后一token的偏移，注意当前是在as对齐之前
         elif hasattr(plist, "M_OPEN"):
             nnext_, _ = plist.token_next_by(m=plist.M_OPEN)
-            if nnext_ is not None:
+            opener = plist.tokens[nnext_] if nnext_ is not None else None
+            if (
+                prev_ is not None
+                and prev_ is not opener
+                and isinstance(prev_, sql.TokenList)
+                and self._ends_with_comment(prev_)
+            ):
+                # 注释前还有内容（不是紧跟括号/over 的开口）→ 与**前一段内容的层级**对齐，
+                # 而不是括号内容的起始列。
+                # 例：`with c as ( … where 1 = 1 --a\n--b\n       --c )` 里，`--c` 是独立的
+                # Comment 组，父是 CTE 体括号（内容起始列 0），但它该对齐到 where 内容的 7。
+                content = prev_
+                if isinstance(content, sql.TokenList):
+                    inner = content.token_first()
+                    if inner is not None and inner.ttype is not None and inner.ttype in T.Keyword:
+                        _, inner = content.token_next(content.token_index(inner), skip_cm=True)
+                    if inner is not None:
+                        content = inner
+                offset_ = self._get_offset(content)
+            elif nnext_ is not None:
                 offset_ = self._get_offset(plist.token_next(nnext_, skip_cm=True)[1])
         else:
             pprev_ = None
