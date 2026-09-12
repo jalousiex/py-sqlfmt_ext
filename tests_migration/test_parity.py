@@ -24,11 +24,11 @@ _ALIGN = "列对齐（AlignPass）未实现"
 KNOWN_DIFF = {
     # --- S6：列对齐（含注释列 / 末尾逗号列 / from 缩进） ---
     "case/sqltest4_s01": _ALIGN,
-    # ddl/s01 除对齐外还差一条：官方 `group_functions` 对 CREATE+TABLE 提前 return，
-    # 比 fork 多这个条件，导致 `duplicate key(...)` / `range(...)` / `hash(...)`
-    # 没被包成 Function，被字段列表分支误展开（见 PLAN §9.3 S4c）
-    "ddl/sqltest0_s01": _ALIGN,
-    "ddl/sqltest0_s02": _ALIGN,
+    # ddl/s01 的**对齐**部分已随 U16（`DATETIME` 补进词表）修好，残差只剩 **U13**：
+    # 官方 `group_functions` 对 CREATE+TABLE（且非 AS）提前 `return`，比 fork 多这个条件，
+    # 导致 `duplicate key(id,name)` / `range(date_trunc(...))` / `hash(ID)` 没被包成
+    # Function，被字段列表分支误展开（见 PLAN §9.3「S6c」）。
+    "ddl/sqltest0_s01": "U13：官方 group_functions 的 CREATE+TABLE 早退（分组，非对齐）",
     "nested/sqltest3_s01": _ALIGN,
     "window/sqltest6_s03": _ALIGN,
 }

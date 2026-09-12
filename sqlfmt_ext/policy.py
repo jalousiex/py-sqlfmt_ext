@@ -99,6 +99,17 @@ KEYWORDS_DORIS = {
     "PROPERTIES": T.Keyword,
 }
 
+# 数据类型名 → ``T.Name.Builtin``。官方词表里的内置类型（CHAR/INT/VARCHAR/DECIMAL…）
+# 与旧 fork 完全一致，**缺的是**：旧 fork 的关键字正则不要求词尾边界，``DATE`` 会把
+# ``DATETIME`` 一并命中，所以 fork 下 ``datetime`` 是 ``Name.Builtin``；官方是整词匹配，
+# ``DATETIME`` 落成普通 ``Name`` —— 于是 DDL 里「字段名 + 类型名」被 ``group_identifier``
+# 粘成一个 ``Identifier``，``_create_field_lines`` 的类型列取不到 token，整条字段对齐的
+# 列基准全错（``ddl/sqltest0_s01``、``ddl/sqltest0_s02``，两例都只差这一个词）。
+# 以后遇到同类「fork 靠前缀意外命中」的类型（``INT64``/``INT32``/``DATE32``…）照此加一条。
+KEYWORDS_TYPES = {
+    "DATETIME": T.Name.Builtin,
+}
+
 # 官方多词关键字区块的定位锚点（依次尝试，取第一个命中的）
 ANCHOR_PATTERNS = (
     r"CREATE(\s+OR\s+REPLACE)?\b",

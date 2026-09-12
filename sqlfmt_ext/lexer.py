@@ -28,6 +28,8 @@ class DialectLexer(Lexer):
             return
         # 词表：追加查询（命中即返回），不覆盖官方已有键
         self.add_keywords(policy.KEYWORDS_DORIS)
+        # 数据类型名：官方缺 DATETIME（旧 fork 靠 DATE 的前缀匹配意外命中）
+        self.add_keywords(policy.KEYWORDS_TYPES)
         # 多词关键字：前插到官方多词关键字区块，避免被通用单词规则抢先
         self._insert_rules(policy.compiled(policy.MULTIWORD_REGEX), policy.ANCHOR_PATTERNS, len(self._SQL_REGEX) - 8)
         # 优先级补丁：必须早于官方「函数名」正则，否则 over( 会被判成 Name
