@@ -299,11 +299,20 @@ class LayoutPass(AlignMixin):
                 # 括号内容的缩进
                 with indent(self):
                     nidx, next_ = tlist.token_next(0, skip_cm=True)
-                    while next_ and nidx > 0:
-                        nidx, _ = self._remove_prev_newline(tlist, nidx)
-                        tlist.insert_before(next_, self.nl())
-                        nidx, next_ = tlist.token_next_by(m=(T.Punctuation, ","), idx=nidx + 1)
-                        nidx, next_ = tlist.token_next(nidx, skip_cm=True)
+                    # 首个子列表以注释开头（`_absorb_leading_comments` 把注释并进列表
+                    # 首位）时，注释与 `(` 同行才是 fork 口径：首个换行交给
+                    # `_process_identifierlist` 插到注释之后，这里既不能插换行、也不能
+                    # 让 `_remove_prev_newline` 把 `(` 后那个空格删掉
+                    if not (
+                        isinstance(next_, sql.IdentifierList)
+                        and bool(next_.tokens)
+                        and self._is_comment(next_.tokens[0])
+                    ):
+                        while next_ and nidx > 0:
+                            nidx, _ = self._remove_prev_newline(tlist, nidx)
+                            tlist.insert_before(next_, self.nl())
+                            nidx, next_ = tlist.token_next_by(m=(T.Punctuation, ","), idx=nidx + 1)
+                            nidx, next_ = tlist.token_next(nidx, skip_cm=True)
                 self._process_default(tlist, stmts=False)
                 # 新增对齐逻辑
                 self._align_create_columns(tlist)

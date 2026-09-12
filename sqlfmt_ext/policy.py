@@ -68,6 +68,11 @@ split_words = (
 # 需要先于官方「通用单词」规则生效的多词关键字。
 MULTIWORD_REGEX = (
     (r"(LATERAL\s+VIEW\s+)(EXPLODE|INLINE|PARSE_URL_TUPLE|POSEXPLODE|STACK)\b", T.Keyword),
+    # UDTF 不在上面白名单时的兜底：``LATERAL VIEW`` 至少要并成一个 Keyword。
+    # 否则 ``lateral`` 与 ``view`` 各自成词，split_words 里的 ``LATERAL\s+VIEW``
+    # 对两个单词 token 都匹配不上（match 是拿整条正则去 search 单个 token 的
+    # normalized），多个 lateral view 就全被挤在 ``from`` 同一行。
+    (r"(LATERAL\s+VIEW)\b", T.Keyword),
     (r"BUILD\s+(IMMEDIATE|DEFERRED)\b", T.Keyword),
     (r"\bREFRESH\b", T.Keyword),
     (r"\bON\s+(MANUAL|SCHEDULE|COMMIT)\b", T.Keyword),

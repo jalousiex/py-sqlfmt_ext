@@ -32,7 +32,20 @@
    而旧 fork 放宽成 ``True``（源码注释：「支持关键字作为字段名」）。
    ``level``/``rows`` 这类词在官方词表里是关键字，于是 ``select level as depth``
    的 ``level as depth`` 不成组，``group_identifier_list`` 会把 ``level`` 当成独立
-   列表项，字段列表被切碎、列对齐整体失效。见 ``_group_as_with_keyword``。
+   列表项，字段列表被切碎、列对齐整体失效。见 ``_wrap_keyword_alias_lhs``。
+
+5. **官方 ``group_functions`` 会把「DDL/INSERT 的对象名加字段列表」误判成函数调用**
+   （官方分组之前补）。
+   官方判定是「``T.Name`` 紧跟 ``Parenthesis`` 即 ``Function``」，不区分位置。
+   ``insert into db.tb (user_id, name, age)`` 里 ``tb`` 后面紧跟 ``(``，于是被包成
+   ``Function[tb (…)]``，再被 ``group_period`` 收进 ``Identifier[db, '.', Function]``。
+   危害是连锁的：   ``group_identifier`` 的 ``@recurse(sql.Identifier)`` **不递归进
+   ``Identifier`` 子组**，于是括号里的裸 ``T.Name`` 再也包不成 ``Identifier``，
+   ``LayoutPass._process_parenthesis`` 于是把这段当成普通函数括号、字段列表不展开
+   （S4 的 5 个用例）。旧 fork 在 ``group_functions`` 里有「跳过表名+列名括号」
+   的专门分支，本项目不改官方源码，改为在官方分组**之前**把对象名链预包成
+   ``Identifier``：``group_functions`` 只看本层的裸 ``T.Name``、不递归，链一包住
+   它就看不见了。见 ``_pre_wrap_object_name``。
 """
 
 from sqlparse import sql
@@ -40,7 +53,11 @@ from sqlparse import tokens as T
 from sqlparse.engine import grouping as official
 from sqlparse.utils import imt
 
-# 与官方 ``group_identifier_list`` 的判定口径保持一致（含 ``T.Comment``）。
+# 与官方 ``group_identifier_list`` 的判定口径基本一致（含 ``T.Comment``），
+# 仅补一个 ``sql.Parenthesis``：官方 ``sqlcls`` 不含它，于是 ``values (…), (…)``
+# 这种「括号作列表项」的多行值列表在官方分组下永远成不了 ``IdentifierList``
+# （``LayoutPass._process_values`` 依赖它已经成组）。旧 fork 的 ``sqlcls`` 含
+# ``sql.Parenthesis``。
 _SQLCLS = (
     sql.Function,
     sql.Case,
@@ -48,6 +65,7 @@ _SQLCLS = (
     sql.Comparison,
     sql.IdentifierList,
     sql.Operation,
+    sql.Parenthesis,
 )
 _TTYPES = official.T_NUMERICAL + official.T_STRING + official.T_NAME + (T.Keyword, T.Comment, T.Wildcard)
 _M_ROLE = T.Keyword, ("null", "role")
@@ -175,6 +193,67 @@ def _wrap_keyword_alias_lhs(tlist):
     official._group(  # noqa: SLF001 官方遍历原语，配合本项目判定回调使用
         tlist, sql.Identifier, match, valid_prev, valid_next, post
     )
+
+
+_OBJECT_NAME_ANCHORS = frozenset({"INTO", "TABLE", "VIEW"})
+_NAME_CHAIN_TTYPES = (T.Name, T.String.Symbol)
+
+
+def _pre_wrap_object_name(tlist):
+    """把「DDL/INSERT 的对象名链」预包成 ``Identifier``（官方分组之前）。
+
+    官方 ``group_functions`` 只看本层的裸 ``T.Name`` 是否紧跟 ``Parenthesis``，
+    不区分函数调用与「表名 + 字段列表」。``insert into db.tb (user_id, …)`` 于是
+    被包成 ``Identifier[db, '.', Function[tb (…)]]``；``group_identifier`` 不递归进
+    ``Identifier`` 子组，括号里的裸 ``Name`` 从此包不成 ``Identifier``，字段列表
+    不展开（模块 docstring 第 5 条）。
+
+    这里在官方分组之前，把「锚点关键字之后的对象名链」包成一个 ``Identifier``。
+    锚点只有三类：``INTO``（INSERT）、``TABLE`` / ``VIEW``（CREATE …），
+    并且**只有当链尾后面确实紧跟 ``(`` 时**才包：
+
+    - ``insert into t select f(x) …``：``t`` 后面不是 ``(``，不包，
+      官方照常把 ``f(x)`` 认成 ``Function``（与 fork 一致）；
+    - ``create table a.b (…)``：官方 ``group_period`` 本来也会把 ``a.b`` 收成
+      ``Identifier``，这里只是把时机提前到 ``group_functions`` 之前，形状不变。
+
+    包住的 ``Identifier`` 是 ``_group`` 的 ``cls``，官方各步都不会再递归进去，
+    因此内部裸 ``Name`` 保持原样（与 fork 的 ``Identifier[db, '.', tb]`` 同形），
+    而括号升到本层后会被 ``group_identifier`` 正常收住。
+    """
+
+    # 快照遍历：``group_tokens`` 会就地改动 ``tlist.tokens``，位置要实时取
+    for anchor in list(tlist.tokens):
+        if not (anchor.is_keyword and anchor.normalized in _OBJECT_NAME_ANCHORS):
+            continue
+        idx = tlist.token_index(anchor)
+        if idx is None:
+            continue
+
+        nidx, next_ = tlist.token_next(idx)
+        # ``IF [NOT] EXISTS`` 被官方词表整句词条化成一个 Keyword token
+        while next_ is not None and next_.is_keyword and next_.normalized.startswith("IF"):
+            nidx, next_ = tlist.token_next(nidx)
+        if next_ is None or next_.ttype not in _NAME_CHAIN_TTYPES:
+            continue
+
+        start = end = nidx
+        cur = nidx
+        while True:
+            nidx, next_ = tlist.token_next(cur)
+            if next_ is None:
+                break
+            if next_.ttype in _NAME_CHAIN_TTYPES or next_.match(T.Punctuation, "."):
+                end = cur = nidx
+            elif next_.is_keyword and next_.normalized == "AS":
+                # ``insert into t as x (…)``：少见的形状，让链继续往前走
+                cur = nidx
+            else:
+                break
+
+        _, after = tlist.token_next(end)
+        if after is not None and after.match(T.Punctuation, "("):
+            tlist.group_tokens(sql.Identifier, start, end)
 
 
 def _group_level(tlist):
@@ -312,9 +391,81 @@ def _absorb_leading_comments(tlist):
         idx += 1
 
 
+def _create_guard(tlist):
+    """复刻旧 fork ``group_identifier_list`` 的 CREATE/ALTER 守卫。
+
+    fork 在 ``group_identifier_list`` 开头做两件事（源码注释：「不需要处理：
+    create/alter/insert 后，且在 with/select/values 前的 1-2 个括号」）：
+
+    - ``CREATE``/``ALTER`` 且整条语句**没有** ``SELECT`` → 直接 ``return``，
+      整条语句一个列表都不建；
+    - 有 ``SELECT`` → 只跳过 ``SELECT`` **之前**的子组（典型是 ``create view x
+      (col…) as select …`` 的字段列表括号），``SELECT`` 之后照常。
+
+    官方 ``group_identifier_list`` 没有这层守卫，字段列表括号里会多出一个
+    ``IdentifierList``，于是 ``LayoutPass._process_parenthesis`` 的字段列表分支
+    把换行插到了那个列表前面 —— 而注释被 ``_absorb_leading_comments`` 放在列表
+    首位，换行就落到了注释前面（``ddl/sqltest0_s03``）。
+
+    返回 ``None`` 表示本层无守卫；``False`` 表示整层跳过；整数表示只跳过下标小于
+    它的子组。
+    """
+
+    has_create = False
+    for token in tlist.tokens:
+        if token.ttype is T.DDL and token.normalized in ("CREATE", "ALTER"):
+            has_create = True
+            break
+    if not has_create:
+        return None
+
+    for idx, token in enumerate(tlist.tokens):
+        if token.match(T.DML, "SELECT"):
+            return idx
+    return False
+
+
+def _flatten_identifier_lists(tlist):
+    """把本层直属的 ``IdentifierList`` 子组整体摊平回本层（不改变 token 相对顺序）。
+
+    ``_create_guard`` 说明的两种情形里，旧 fork 的 ``group_identifier_list``
+    **不会**建列表，官方却会建。多出来的那层列表有两处副作用：
+
+    - ``LayoutPass._process_parenthesis`` 的字段列表分支会把换行插到「列表」前面，
+      而 ``_absorb_leading_comments`` 把前导注释放在列表首位，换行于是落到注释
+      之前（``ddl/sqltest0_s03`` 期望注释与 ``(`` 同行）；
+    - ``_align_create_columns`` 依赖括号内的扁平结构取字段基准偏移。
+
+    这里把官方多出来的那层去掉，还原成 fork 的扁平形状。
+    """
+
+    for sgroup in list(tlist.get_sublists()):
+        _flatten_identifier_lists(sgroup)
+
+    idx = 0
+    while idx < len(tlist.tokens):
+        token = tlist.tokens[idx]
+        if isinstance(token, sql.IdentifierList):
+            tlist.tokens[idx:idx + 1] = token.tokens
+            for child in token.tokens:
+                child.parent = tlist
+            _refresh_values(tlist)
+            continue  # 摊平后同一位置可能又是子列表，重新检查
+        idx += 1
+
+
 def _walk(tlist):
+    guard = _create_guard(tlist)
+    if guard is False:
+        # CREATE/ALTER 且无 SELECT：fork 整条不建列表，官方建的都摊平掉
+        _flatten_identifier_lists(tlist)
+        return
     _splice_continuations(tlist)
     for sgroup in list(tlist.get_sublists()):
+        if guard is not None and tlist.token_index(sgroup) < guard:
+            # SELECT 之前的子组（典型是字段列表括号）fork 不建列表
+            _flatten_identifier_lists(sgroup)
+            continue
         _walk(sgroup)
     # 已经是列表的层不再归并，否则会在列表内部再套一层列表
     if isinstance(tlist, sql.IdentifierList):
@@ -326,6 +477,7 @@ def group(stmt):
     """官方分组 + 本项目补偿。调用方用它替换 ``grouping.group``。"""
     _group_interval_literals(stmt)  # 必须在官方分组之前
     _wrap_keyword_alias_lhs(stmt)  # 必须在官方分组之前
+    _pre_wrap_object_name(stmt)  # 必须在官方分组之前
     stmt = official.group(stmt)
     _walk(stmt)
     _unabsorb_trailing_comments(stmt)

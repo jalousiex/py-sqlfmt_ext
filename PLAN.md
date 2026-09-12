@@ -103,10 +103,12 @@ S7 删除 fork 后该 conftest 一并删除。
 | 仅空白宽度不同 | 6 / 31 |
 | 换行骨架不同 | 24 / 31 |
 
-> **当前进度（2026-09-12 更新）**：`pytest tests_migration/ -q` → **`14 passed, 17 xfailed`**。
-> 空白归一化（U11）一次性把 8 个用例（`aggregate/s01`、`cte/s01`、`ddl/s05`、
-> `dml/s03`、`dml/s05`、`dml/s07`、`dml/s08`、`window/s02`）从「待实现规则」变成逐字节
-> 一致——它们的首处差异本来就是该处 ±1 列宽，不是换行骨架差异（见 §3.5、§9.3）。
+> **当前进度（2026-09-12，S5 部分完成）**：`pytest tests_migration/ -q` → **`22 passed, 9 xfailed`**。
+> 剩余 9 个按根因分两组：**S5 结构性折行 2**（`cte/s02` = U14、`case/s03` = 已知不收敛）
+> 与 **S6 列对齐 7**（`case/s01`、`ddl/s01 s02`、`nested/s01 s02`、`window/s01 s03`），
+> 见 §4 与 §9.3。
+> （空白归一化 U11 曾一次性把 8 个用例从「待实现规则」变成逐字节一致——它们的首处差异
+> 本来就是该处 ±1 列宽，不是换行骨架差异，见 §3.5、§9.2。）
 
 > **修正**：早先 `_tmp_official_ai4.py` 得出的「28/31 骨架一致」是**偏乐观**的结论——
 > 当时只把 `AlignedIndentFilter` + `strip` 换成官方，其余（`grouping` / `sql` /
@@ -123,13 +125,11 @@ S7 删除 fork 后该 conftest 一并删除。
 | 套件 | 命令 | 现状 |
 |---|---|---|
 | 主套件（旧 fork） | `.venv\Scripts\python.exe -m pytest tests/ -q` | `170 passed, 6 xfailed` |
-| 对拍进度条（新外挂） | `.venv\Scripts\python.exe -m pytest tests_migration/ -q` | `14 passed, 17 xfailed` |
+| 对拍进度条（新外挂） | `.venv\Scripts\python.exe -m pytest tests_migration/ -q` | `22 passed, 9 xfailed` |
 | 诊断报告 | `.venv\Scripts\python.exe _tmp_gap.py` | 逐用例首处差异 + 异常容错 |
 
-已复现（14）：`debug/sqldebug_s02`、`case/sqltest4_s03`（CASE 首个 WHEN）、
-`generic/sqltest8_s01`（`select * from` 折叠）、`ddl/sqltest0_s04`（`ON COMMIT`）、
-`comma/sqltest7_s01`（分组口径）、`aggregate/sqltest5_s01`/`s02`、`cte/sqltest2_s01`、
-`ddl/sqltest0_s05`、`dml/sqltest1_s03`/`s05`/`s07`/`s08`、`window/sqltest6_s02`。
+已复现 21：以 §4 的规则→用例映射与 `tests_migration/test_parity.KNOWN_DIFF` 为准
+（后者只剩 10 条未复现条目，且逐条带根因，不再手工维护重复名单）。
 
 ### 3.4 上游 0.6.0 与旧 fork 的语义差异清单（迁移的真实成本）
 
@@ -239,18 +239,20 @@ fork 侧 `ws=' ' ws_idx=1`）；两侧 `_identifier_layouts` 的汇总值**完�
 ### 规则 → 用例映射（2026-09-12 第三轮刷新）
 
 分类口径用 `_tmp_check.py` 的摘要（「S 类」= 该用例每一处差异行都只是空白宽度/列对齐）。
-**L1 已清零**：剩下的注释类用例（`cte/s02`、`nested/s01 s02`、`window/s01 s03`）
-首处差异已全部退化为空白宽度，即注释断行本身已经对了。
+**L1（注释断行）、L2（括号字段列表展开）、L4（多 LATERAL VIEW）已清零**（S3 / S4 / S5a）。
 
 ```
-S6 对齐 (7): cte/s02 | nested/s01 | nested/s02 | window/s01 | window/s03
-             ddl/s02 | ddl/s06
-S4 字段列表 (5): ddl/s01 | ddl/s03 | dml/s01 | dml/s02 | dml/s04
-S5 (3): case/s01（CASE 内 as 列对齐 + 折行）| case/s03（首个 when 独占行）
-        | dml/s06（L4 多 LATERAL VIEW）
+S6 列对齐 (7): case/s01 | ddl/s01 | ddl/s02 | nested/s01 | nested/s02
+              window/s01 | window/s03
+S5 结构性折行 (2): cte/s02（U14：`)` 与 `over` 之间的注释挡住官方并入 Function）
+                  | case/s03（首个 when 独占行，已知不收敛）
 
-合计 7+5+3 = 15，与当前 15 个 xfailed 一一对应
+合计 7+2 = 9，与当前 9 个 xfailed 一一对应
 ```
+
+> `ddl/s01` 除了列对齐，还差一条**分组**差异（官方 `group_functions` 对
+> CREATE+TABLE 提前 `return`，fork 没有这个条件 → `duplicate key(...)` /
+> `range(...)` / `hash(...)` 被字段列表分支误展开），见 §9.3「S4c」。
 
 **U9 的教训**：`debug/sqldebug_s01` 首版被归成 A1「列对齐未实现」，真因是**分组**——
 官方 `group_as.valid_prev` 拒绝「关键字作 AS 左值」（旧 fork 放宽成 `True`），
@@ -286,9 +288,12 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | **S1** | 把布局引擎移植到官方 0.6.0 之上：方言 lexer、分词补丁、`LayoutPass`（断行+对齐规则集）、摘掉官方换行 filter | 骨架跑通且不崩 | **4 / 27** | ✅ 完成 |
 | **S2** | 上游语义差异补偿 U5–U7（`Case.get_cases` 注释占位、`Where.M_CLOSE`、`get_real_name`） | 实测收敛为 1 项 | 4 / 27 | ✅ 完成：U5 落地；U6/U7 经检索确认无影响（见 §3.4）。`case/sqltest4_s02` 转正，`s03` 转 KNOWN_DIFF（等 L5 结构性规则） |
 | **S3** | `LayoutPass` L1 注释强制换行（结构性规则：`--` 与 `/*-*/` 强制断行、连续注释各自成行） | +11 | **16 / 15** | ✅ 完成（U11 + S3c + U9 分组补偿，L1 已清零） |
-| **S4** | `LayoutPass` L2 括号字段列表展开（残留疑为分组口径差异，待核） | +5 | 16 / 15 | ⏳ 待做 |
-| **S5** | `LayoutPass` L4 多 LATERAL VIEW + L5 CASE 折行 | +3 | 19 / 12 | ⏳ 待做 |
-| **S6** | `AlignPass` 列对齐收尾（注释列 / 末尾逗号 / `as` 列） | +7 | **31 / 0** | ⏳ 待做 |
+| **S4** | `LayoutPass` L2 括号字段列表展开（真因 = 分组口径 U12） | +5 | 21 / 10 | ✅ 完成 |
+| **S5a** | `policy` LATERAL VIEW 分词兜底（L4 多 `lateral view` 各自分行） | +1 | **22 / 9** | ✅ 完成 |
+| **S5b** | U14：`)` 与 `over` 之间的注释挡住官方把 `OVER` 并入 `Function`（`cte/s02`） | +1 | — | ⏳ 下一段 |
+| **S4c** | 官方 `group_functions` 的 CREATE+TABLE 早退严于 fork（`ddl/s01`） | +1 | — | ⏳ 可并入 S6 |
+| **S5c** | `case/s03` 首个 `when` 独占行（**已知不收敛**，需先定规则或重定基线） | +1 | — | ⏳ 需决策 |
+| **S6** | `AlignPass` 列对齐收尾（注释列 / 末尾逗号 / `as` 列 / `from` 缩进） | +7 | **31 / 0** | ⏳ 待做 |
 | **S7** | 收敛 + 幂等 + 入口切换 + 删 fork + 改 AGENTS.md/README | 新实现通过全部 4 套测试 | — | ⏳ 待做 |
 | **S8** | 方言层补完（Doris/SelectDB）+ SQL Server 适配 | 方言用例 | — | ⏳ 待做，可并行 |
 
@@ -373,18 +378,21 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | 2026-09-12 | S3 进行中：①分组补偿层扩到四条（裸 `interval` 字面量预成组、注释打断列表的归并、`align_comments` 前并/后并口径回正、`_refresh_values`）；②lexer 新增「优先级补丁」插入点，`OVER (` 判回 `Keyword`（U10）；③对拍 **4/27 → 5/26**（`comma/sqltest7_s01` 转正），主套件保持 `170 passed, 6 xfailed`；④定位列对齐 ±1 的根因 = 官方 lexer 逐字符空白 token（U11，见 §3.5），列为下一步第一优先；⑤新增 §9 断点续做章节。 |
 | 2026-09-12 | **U11 落地，对拍 `5/26` → `14/17`**：①新增 `sqlfmt_ext/whitespace.py::merge_whitespace_runs`；②新增 `sqlfmt_ext/filters/whitespace.py::StripWhitespaceFilter`，在官方 `_stripws()` 之前合并空白段，并换装进 stack（`stack._swap_whitespace_filter`）；③`LayoutPass.process` 入口保留幂等兜底调用。修掉两类问题：`_set_adjacent_ws` 改写错 token（列宽 +1）与官方 `_stripws_identifierlist` 只删 1 个空 token（逗号前残留 1 空格）。8 个用例转正后**重新校准 §4 规则→用例映射**：L3/L6/L7 整条消失，L1 12→8、L2 7→6、A1 6→1。 |
 | 2026-09-12 | 工具整理：`_tmp_cmp.py` 的两侧选项与主套件口径对齐（去掉多传的 `comma_align`、按 `;` 拆分后以空行拼接、支持 `@相对路径` 直接喂 fixture）；`_tmp_*.py` 加入 `.gitignore`（迁移期临时脚本，S7 统一删除）。 |
+| 2026-09-12 | **S5a 落地，对拍 `21/10` → `22/9`**：`policy.MULTIWORD_REGEX` 在 `LATERAL VIEW <白名单 UDTF>` 之后补一条兜底 `(LATERAL\s+VIEW)\b` —— UDTF 不在白名单时（如 `EXPLODE_JSON_ARRAY_JSON`）`lateral`/`view` 会各自成词，`split_words` 的 `LATERAL\s+VIEW` 对两个单词 token 都匹配不上（`match` 是拿整条正则去 search 单个 token 的 normalized），多个 `lateral view` 全被挤在 `from` 行（且旧 fork 靠输入换行侥幸通过，属已知不收敛用例）。→ 转正 `dml/sqltest1_s06`。 |
+| 2026-09-12 | 按 `improve-agent` 的「历史失败模式 → 指令修订」思路修正 `AGENTS.md`：①修掉事实错误（用例目录 `pytests/` → 实际的 `tests/`，并补上两套件的跑法与门槛）；②补「架构」为迁移期四段流水线（`DialectLexer`→官方分组+补偿→`StripWhitespaceFilter`→`LayoutPass`），旧 fork 标注为仅作 oracle；③新增「硬约束 C1–C5」与两条元规则（**列对齐错乱先怀疑分组**；**结论必须写成最小重现**）；④补诊断工具清单与三个坑（`FilterStack.run` 返回生成器、两实现须分进程、不能比非空白 token 序列）。 |
+| 2026-09-12 | **S4 落地，对拍 `16/15` → `21/10`**（+5：`dml/s01 s02 s04`、`ddl/s03 s06`）：①`grouping.py` 新增 `_pre_wrap_object_name`，官方分组前把 DDL/INSERT 的对象名链预包成 `Identifier`（U12）；②`_SQLCLS` 补 `sql.Parenthesis`，修 `values (…), (…)` 多行值列表不成组；③新增 `_create_guard` + `_flatten_identifier_lists`，复刻 fork 的 CREATE/ALTER「SELECT 前不建列表」守卫并把官方多建的列表摊平；④`_process_parenthesis` 字段列表分支对「首个子列表以注释开头」不再插换行/删空白（注释与 `(` 同行）。主套件保持 `170 passed, 6 xfailed`。`ddl/s01` 残留归 S4c（官方 `group_functions` 的 CREATE+TABLE 早退严于 fork）。 |
 
 ---
 
 ## 9. 断点续做（下一次会话从这里开始）
 
-> 落盘时间：2026-09-12（第二轮），U11 已完成，**对拍 14/17**，S3 的 L1 结构性规则待写。
+> 落盘时间：2026-09-12（第五轮），S1–S4 与 S5a 已完成，**对拍 22/9**，下一段 = S5b（U14）。
 
 ### 9.1 复现当前状态
 
 ```powershell
 .venv\Scripts\python.exe -m pytest tests/ -q            # 170 passed, 6 xfailed（旧 fork，必须保持）
-.venv\Scripts\python.exe -m pytest tests_migration/ -q  # 14 passed, 17 xfailed（新外挂，进度条）
+.venv\Scripts\python.exe -m pytest tests_migration/ -q  # 22 passed, 9 xfailed（新外挂，进度条）
 .venv\Scripts\python.exe _tmp_check.py                  # 逐用例精确 diff（当前唯一主力诊断）
 ```
 
@@ -412,16 +420,19 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 > 每段收尾动作固定：`pytest tests/ -q`（须 170 passed, 6 xfailed）→
 > `pytest tests_migration/ -q` → 更新 `test_parity.KNOWN_DIFF` → 更新本文件进度 → commit。
 
-| 段 | 目标 | 涉及用例（当前 15 xfailed） | 主读文件 | 状态 |
+| 段 | 目标 | 涉及用例（当前 9 xfailed） | 主读文件 | 状态 |
 |---|---|---|---|---|
-| S4 | L2 括号字段列表展开（**先核分组口径**） | `ddl/s01 s03`、`dml/s01 s02 s04` | `passes/layout.py::_process_parenthesis/_process_identifierlist` + `grouping.py` | ⏳ 下一段 |
-| S5 | L4 多 `LATERAL VIEW` 各自分行；L5 `case` 后首个 `when` + CASE 折行 | `dml/s06`、`case/s03`、`case/s01` | `_is_lateral_view_list`、`_process_case` | ⏳ |
-| S6 | 列对齐收尾（末尾逗号列 / `as` 列 / 注释列 / `from` 缩进） | `cte/s02`、`nested/s01 s02`、`window/s01 s03`、`ddl/s02 s06` | `passes/align.py` | ⏳ |
+| S4 | L2 括号字段列表展开（真因 = 分组口径） | `dml/s01 s02 s04`、`ddl/s03 s06` | `grouping.py` + `passes/layout.py::_process_parenthesis` | ✅ 完成（16 → 21） |
+| S5a | L4 多 `lateral view` 各自分行 | `dml/s06` | `policy.MULTIWORD_REGEX` | ✅ 完成（21 → 22） |
+| S5b | U14：`)` 与 `over` 之间的注释挡住官方并入 `Function` | `cte/s02` | `grouping.py` + `passes/layout.py` 的 `Over` 处理 | ⏳ 下一段 |
+| S4c | 官方 `group_functions` 的 CREATE+TABLE 早退严于 fork | `ddl/s01` | `grouping.py` + `passes/layout.py::_process_parenthesis` | ⏳ 可与 S6 合并 |
+| S5c | `case` 后首个 `when` 独占行（**已知不收敛**，先定规则或重定基线） | `case/s03` | `passes/layout.py::_process_case` | ⏳ 需决策 |
+| S6 | 列对齐收尾（末尾逗号列 / `as` 列 / 注释列 / `from` 缩进） | `case/s01`、`ddl/s01 s02`、`nested/s01 s02`、`window/s01 s03` | `passes/align.py` | ⏳ |
 | S7 | 收敛 + 幂等 + 入口切换 + 删 fork + 改 AGENTS/README + 删 `_tmp_*` | — | — | ⏳ |
 
 **分段推进的操作要点（省上下文的做法）**
 1. **先分类再动手**：`python _tmp_check.py` 只看摘要（每例首 2 处差异 + 「是否只是空白宽度」），
-   一条命令拿到全部 15 个用例的格局，再决定这段做哪一类。
+   一条命令拿到全部 10 个用例的格局，再决定这段做哪一类。
 2. **一次只读该段需要的文件**：S4 只读 `layout.py` 的 `_process_parenthesis` /
    `_process_identifierlist` + `grouping.py`；跨文件搞清楚「官方某步是不是在别处发生」时，
    用 `code-explorer` 子代理，只把结论带回主线。
@@ -440,35 +451,89 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 **必须排除 `END`**：它是 `sql.Case.M_CLOSE`，`group_case` 早于 `group_as` 且
 `token_next_by` 不递归，提前包住 `END` 会让 CASE 分组整个散架（`case/sqltest4_s02` 曾因此回归）。
 
-**S4 起点（交接信息）**：剩下 3 类。注释类（L1）已清零，不用再碰 `_process_comment`；
-`case/s01` 的 21 处差异里夹着 CASE 折行，归 S5 一并看。
+**S4 已收（2026-09-12）→ 对拍 `16/15` 变 `21/10`**。根因与最小重现（`insert into
+db.tb (user_id, name, age) values (1, 'a', 2);`）：官方树是
+`Identifier[db, '.', Function[tb ( IdentifierList[user_id, name, age] )]]` ——
+`group_functions` 把「`T.Name` 紧跟 `Parenthesis`」无条件当函数；又因
+`group_identifier` 是 `@recurse(sql.Identifier)`（**不递归进 `Identifier` 子组**），
+括号里的裸 `T.Name` 再也包不成 `Identifier`，`_process_parenthesis` 于是早退、字段列表不展开。
 
-**S4 根因已定位（不必重新推导）**——最小重现：
-`insert into db.tb (user_id, name, age) values (1, 'a', 2);`
+四处改动：
 
-- fork 树：`Identifier[db.tb]` + `Parenthesis[( IdentifierList[Identifier[user_id], ',', …] )]`
-  → `_process_parenthesis` 走「非 simple_parenthesis」分支 → 展开成一行一列。
-- 官方树：`Identifier[db, '.', Function[tb ( IdentifierList[user_id, name, age] )]]`
-  → 括号嵌在 `Function` 里，且 `IdentifierList` 成员是**裸 `T.Name`**，
-  命中 `_process_parenthesis` 开头的 `simple_parenthesis` 判定（成员全是非分组 token）→ 直接 return。
+1. **`grouping.py::_pre_wrap_object_name`（官方分组前）**：锚定 `INTO` / `TABLE` / `VIEW`
+   之后的「对象名链」（`T.Name` / `T.String.Symbol` / `.` / `AS Name`，可跳过官方词条化的
+   `IF NOT EXISTS`），**只有链尾紧跟 `(`** 时才包成 `sql.Identifier`。官方
+   `group_functions` 只看本层裸 `T.Name`、不递归，链一包住它就看不见了；括号因此升到
+   语句层，被 `group_identifier` 正常收住。`insert into t (a) select f(x)` 这类无 `(` 的形状
+   不受影响。→ 转正 `dml/s01 s02 s04`。
+2. **`grouping.py::_SQLCLS` 补 `sql.Parenthesis`**：官方 `group_identifier_list` 的 `sqlcls`
+   不含它，`values (…), (…)` 这种「括号作列表项」的多行值列表在官方分组下永远成不了
+   `IdentifierList`（`LayoutPass._process_values` 依赖它已成形）。→ 转正 `dml/s04`。
+3. **`grouping.py::_create_guard` + `_flatten_identifier_lists`**：复刻 fork
+   `group_identifier_list` 开头的 CREATE/ALTER 守卫 —— `CREATE`/`ALTER` 且**无** `SELECT`
+   时整条不建列表；有 `SELECT` 时 `SELECT` **之前**的子组不建列表（源码注释：「不需要处理：
+   create/alter/insert 后，且在 with/select/values 前的 1-2 个括号」）。官方会建，所以这里把
+   多出来的那层列表**摊平**回父层（不改变 token 相对顺序），让
+   `_process_parenthesis` 的字段列表分支与 `_align_create_columns` 看到 fork 的扁平结构。
+   → 转正 `ddl/s03 s06`；`cte/s02` 的对齐偏移也更接近期望。
+4. **`passes/layout.py::_process_parenthesis`（字段列表分支）**：首个子列表以注释开头
+   （`_absorb_leading_comments` 把注释放进列表首位）时，**既不插换行、也不做
+   `_remove_prev_newline`** —— 注释与 `(` 同行才是 fork 口径，首个换行交给
+   `_process_identifierlist` 插到注释之后。
 
-两个官方行为叠加造成：
-1. **`group_functions` 把「`T.Name` 紧跟 `Parenthesis`」无条件当函数**。旧 fork 改写了它：
-   ①`has_insert and has_values` 时直接 `return`（注释「值列表插入，不需要识别函数」）；
-   ②`has_create and has_table` 或 `has_insert` 时先用一段循环**跳过表名与紧随的列名括号**
-   （`m_role = ['.', 'AS']`），再从后面开始找函数；③`has_table` 认的是 `["TABLE", "VIEW"]`
-   （官方只认 `TABLE`）——`ddl/sqltest0_s03` 的 CREATE VIEW 就是这条。
-2. **`group_identifier` 是 `@recurse(sql.Identifier)`**：它不递归进 `sql.Identifier` 子组。
-   一旦表名被 `group_period` 包成 `Identifier[db, '.', Function[...]]`，括号里的裸 `Name`
-   就再也包不成 `Identifier`，`simple_parenthesis` 判定和后续列对齐都跟着错。
+**S4c（`ddl/sqltest0_s01` 残留，未做）**：官方 `group_functions` 开头是
+`has_create and has_table and not has_as → return`，**fork 没有这个条件**（fork 的早退是
+`has_insert and has_values`，另有「跳过表名与列名括号」「`has_table` 认 `TABLE`/`VIEW`」）。
+于是 CREATE 语句里的 `duplicate key(id,name)`、`range(date_trunc(p_dt,'month'))`、`hash(ID)`
+在 fork 里是 `Function`（`_process_function` 保持单行），在本实现里是「`Identifier`/`Name`
++ 裸 `Parenthesis`」，被 `_process_parenthesis` 的字段列表分支（`in_root and in_xdl_list`）
+误展开。可行方向二选一：①官方分组**前**先调用官方 `group_parenthesis` 预建括号，再按 fork
+口径只对 CREATE 语句把 `Name/Keyword + Parenthesis` 预包成 `sql.Function`；②把
+`_process_parenthesis` 的展开条件收紧到「对象名链**紧跟的第一个**括号」。**先做 S5**，
+本项可与 S6 合并。
 
-**S4 建议做法**（尚未实施）：官方分组**之前**，把「DDL/INSERT 的对象名链」预包成
-`Identifier`，让官方 `group_functions` 看不到那个裸 `T.Name`（它只看 `T.Name`，不递归）。
-范围：`INSERT` 后第一个 `T.Name` 起、沿 `T.Name` / `T.String.Symbol` / `'.'` / `AS Name`
-连续前进，直到紧邻的 `(` 为止；只有当链尾后面确实是 `(` 时才包。
-这样 `insert into t (a) select f(x) …`（无 VALUES）仍由官方正常识别 `f(x)`，与 fork 一致。
-验证靶子：`dml/sqltest1_s04`（最小，10 处差异）→ `dml/sqltest1_s01`、`dml/sqltest1_s02`
-→ `ddl/sqltest0_s01`、`ddl/sqltest0_s03`。
+**S5a 已收（2026-09-12）→ 对拍 `21/10` 变 `22/9`**：`policy.MULTIWORD_REGEX` 里
+`LATERAL VIEW <白名单 UDTF>` 之后补一条兜底 `(LATERAL\s+VIEW)\b`。UDTF 不在白名单时
+（fixture 用的是 `EXPLODE_JSON_ARRAY_JSON` / `explode_json_object`）`lateral` / `view`
+会各自成词，而 `split_words` 的 `LATERAL\s+VIEW` 是拿**整条正则**去 `search` 单个 token
+的 `normalized`（`Token.match` 的语义），两个单词 token 谁都匹配不上 → 多个 `lateral view`
+全被挤在 `from` 行。旧 fork 之所以「对」，是因为它靠**输入换行**保留（该用例在
+`_tmp_measure.py` 的确定性压平下不收敛）。→ 转正 `dml/sqltest1_s06`。
+
+**S5b 起点（`cte/sqltest2_s02`，交接信息，未做）**：差异只有一处 —— 期望把
+`ROW_NUMBER()` 与 `over(...)` 分到两行、标识符列表按项展开；本实现把
+`ROW_NUMBER() --` 留在上一行。已定位到**分组口径（U14）**，最小重现：
+
+    select EMPLID as EmpCode, ROW_NUMBER() --\nover(partition by EMPLID order by BGN_DTTM desc) as rn from t
+
+fork 树：`IdentifierList[ Identifier[EMPLID as EmpCode], ',', ws,
+Identifier[ Function[ Identifier[ROW_NUMBER], Parenthesis[()], ws, Comment, Over[...] ] ] ]`
+——**注释与 `Over` 都在 `Function` 内部**（列表因此完整、能按项展开）。
+
+本实现树：`IdentifierList[ Identifier[EMPLID as EmpCode], ',', ws,
+Identifier[Function[ROW_NUMBER()]] ]`，**`ws` + `Comment` + `Identifier[Over[...] as rn]`
+落在列表之外**（注释把列表打断 → `_process_identifierlist` 不展开）。
+
+根因：官方 `group_functions` 判定要不要把 `OVER` 并进 `Function` 用的是**下标相邻**
+（形如 `over_idx - 1 == tidx + 1`），容得下 `)` 与 `over` 之间的**空白**（无注释时本实现
+与 fork 完全同形：`Function[Identifier[row_number], Parenthesis, ws, Over]`），
+但**容不下中间的 `Comment`**（多占一个下标）。
+
+可行做法（任选，注意 C1/C2/C3 约束）：
+1. 官方分组**后**做一次靶向合并：在 `Comment` 所在的层找到「`Function`（或包着它的
+   `Identifier`）+ ws + `Comment` + `Identifier[Over ...]`」，把 `Comment` 与 `Over`
+   搬进 `Function.tokens`（重设 `parent` + `_refresh_values`），还原成与 fork 同形。
+   注意 `Over` 现在嵌在另一个 `Identifier` 里，需要把它**取出**（剩下的
+   `Identifier[as, ws, Identifier[rn]]` 是否合法要验证）。
+2. 让注释不落在 `)` 与 `over` 之间（例如把该 `Comment` 提前并进 `Function` 的
+   `Parenthesis` 尾部）—— 需先确认不会又踩到 `_absorb_leading_comments` 的判定。
+建议先按做法 1 试，用 `_tmp_nt.py` / `_tmp_forkidx.py` 对齐两侧树形，再跑
+`_tmp_check.py cte/sqltest2_s02 -v`。
+
+**S5c 起点（`case/sqltest4_s03`，未做）**：`case` 后首个 `when` 独占行。该期望输出在旧实现里
+是**依赖输入换行**判定的（已知不收敛用例），官方 strip 之下没有那个换行可用，因此必须先定：
+①定义一条结构性规则（如「`case` 后首个 `when` 一律换行」）；②或把该 fixture 视为待重定基线。
+**动手前先与用户确认口径。**
 
 ### 9.4 诊断工具（仓库根 `_tmp_*.py`，已在 `.gitignore`，S7 统一删除）
 
