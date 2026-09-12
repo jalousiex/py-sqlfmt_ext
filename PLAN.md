@@ -659,6 +659,19 @@ fork 明确会正常建列表）被一起跳掉、内层列表被摊平。fork �
 >   **列表边界**，重点怀疑两点：①第 5 项里的 `--` 注释把官方的列表构建提前截断，
 >   而我们 `_group_level` 的续接没接上；②`t.*` 是 `Identifier[t, Wildcard]`，
 >   官方 `group_identifier_list` 的 `imt(i=sqlcls…)` 对它的判定与 fork 不同。
+>
+>   **第十二轮补记（机制推断 + 工具缺口，未改代码）**：
+>   列表在**最后一个逗号处**断掉，而 `_group_level` 的续接接不上这种断点，原因是
+>   **`valid_prev` 判定**：从「尾逗号」起建组时，逗号前的真实 token 就是**这个 `IdentifierList`
+>   自己**，而 `_real_item`（`imt(i=_SQLCLS…)`）不认 `IdentifierList` → 组建不起来，
+>   于是 `, t.*` 只能散在语句层。官方那边（`extend=True`）的语义是**扩展相邻同类组**，
+>   我们的续接层没有这一步。
+>   **修法方向**：给 `_group_level` 加一条「若待建组起点前紧邻的真实 token 是同层
+>   `IdentifierList`，则**把它一起扩进去**」（即把 `, item` 并进那个已有列表，而不是新建组），
+>   与官方 `extend=True` 对齐。注意要点：扩展后要 `_refresh_values`，且**只**在
+>   「同层 + 紧邻」时做，避免把 `ddl` 那类多列表场景串起来（跑全量对拍验证）。
+>   **工具缺口**：`_tmp_forkidx.py` **还不支持 `@相对路径`**（它把 `@tests/...` 当 SQL 解析，
+>   会出现 `Operation '/'` 这种假 token）——下一轮先给它补上，再和 `_tmp_nt.py` 两侧对齐列表边界。
 
 ### 9.4 S7 执行卡（含「有意偏离」处置决定）
 
