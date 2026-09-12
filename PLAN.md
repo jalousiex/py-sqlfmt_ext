@@ -440,9 +440,35 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 **必须排除 `END`**：它是 `sql.Case.M_CLOSE`，`group_case` 早于 `group_as` 且
 `token_next_by` 不递归，提前包住 `END` 会让 CASE 分组整个散架（`case/sqltest4_s02` 曾因此回归）。
 
-**S4 起点（交接信息）**：剩下 3 类，`_tmp_check.py` 摘要直接给出：
-S6 对齐 7 个、S4 字段列表 5 个、S5 折行 3 个。注释类（L1）已清零，不用再碰 `_process_comment`；
+**S4 起点（交接信息）**：剩下 3 类。注释类（L1）已清零，不用再碰 `_process_comment`；
 `case/s01` 的 21 处差异里夹着 CASE 折行，归 S5 一并看。
+
+**S4 根因已定位（不必重新推导）**——最小重现：
+`insert into db.tb (user_id, name, age) values (1, 'a', 2);`
+
+- fork 树：`Identifier[db.tb]` + `Parenthesis[( IdentifierList[Identifier[user_id], ',', …] )]`
+  → `_process_parenthesis` 走「非 simple_parenthesis」分支 → 展开成一行一列。
+- 官方树：`Identifier[db, '.', Function[tb ( IdentifierList[user_id, name, age] )]]`
+  → 括号嵌在 `Function` 里，且 `IdentifierList` 成员是**裸 `T.Name`**，
+  命中 `_process_parenthesis` 开头的 `simple_parenthesis` 判定（成员全是非分组 token）→ 直接 return。
+
+两个官方行为叠加造成：
+1. **`group_functions` 把「`T.Name` 紧跟 `Parenthesis`」无条件当函数**。旧 fork 改写了它：
+   ①`has_insert and has_values` 时直接 `return`（注释「值列表插入，不需要识别函数」）；
+   ②`has_create and has_table` 或 `has_insert` 时先用一段循环**跳过表名与紧随的列名括号**
+   （`m_role = ['.', 'AS']`），再从后面开始找函数；③`has_table` 认的是 `["TABLE", "VIEW"]`
+   （官方只认 `TABLE`）——`ddl/sqltest0_s03` 的 CREATE VIEW 就是这条。
+2. **`group_identifier` 是 `@recurse(sql.Identifier)`**：它不递归进 `sql.Identifier` 子组。
+   一旦表名被 `group_period` 包成 `Identifier[db, '.', Function[...]]`，括号里的裸 `Name`
+   就再也包不成 `Identifier`，`simple_parenthesis` 判定和后续列对齐都跟着错。
+
+**S4 建议做法**（尚未实施）：官方分组**之前**，把「DDL/INSERT 的对象名链」预包成
+`Identifier`，让官方 `group_functions` 看不到那个裸 `T.Name`（它只看 `T.Name`，不递归）。
+范围：`INSERT` 后第一个 `T.Name` 起、沿 `T.Name` / `T.String.Symbol` / `'.'` / `AS Name`
+连续前进，直到紧邻的 `(` 为止；只有当链尾后面确实是 `(` 时才包。
+这样 `insert into t (a) select f(x) …`（无 VALUES）仍由官方正常识别 `f(x)`，与 fork 一致。
+验证靶子：`dml/sqltest1_s04`（最小，10 处差异）→ `dml/sqltest1_s01`、`dml/sqltest1_s02`
+→ `ddl/sqltest0_s01`、`ddl/sqltest0_s03`。
 
 ### 9.4 诊断工具（仓库根 `_tmp_*.py`，已在 `.gitignore`，S7 统一删除）
 
