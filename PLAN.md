@@ -103,7 +103,7 @@ S7 删除 fork 后该 conftest 一并删除。
 | 仅空白宽度不同 | 6 / 31 |
 | 换行骨架不同 | 24 / 31 |
 
-> **当前进度（2026-09-12，S6 收尾）**：`pytest tests_migration/ -q` → **`28 passed, 3 xfailed`**
+> **当前进度（2026-09-12，S6 收尾）**：`pytest tests_migration/ -q` → **`29 passed, 2 xfailed`**
 > **+ 1 条有意偏离**（`case/s03`，已是断言项，见 §4「对旧 fork 的有意偏离清单」）。
 > 剩余 3 个**只剩一族**：**S6b 列表末尾列**（`case/s01`、`nested/s01`、`window/s03`），
 > 入口同为 `align.py::_identifier_layouts` / `_apply_identifier_layout`，见 §4 与 §9.3。
@@ -125,7 +125,7 @@ S7 删除 fork 后该 conftest 一并删除。
 | 套件 | 命令 | 现状 |
 |---|---|---|
 | 主套件（旧 fork） | `.venv\Scripts\python.exe -m pytest tests/ -q` | `170 passed, 6 xfailed` |
-| 对拍进度条（新外挂） | `.venv\Scripts\python.exe -m pytest tests_migration/ -q` | `28 passed, 3 xfailed` + 1 有意偏离 |
+| 对拍进度条（新外挂） | `.venv\Scripts\python.exe -m pytest tests_migration/ -q` | `29 passed, 2 xfailed` + 1 有意偏离 |
 | 诊断报告 | `.venv\Scripts\python.exe _tmp_gap.py` | 逐用例首处差异 + 异常容错 |
 
 已复现 28：以 §4 的规则→用例映射与 `tests_migration/test_parity.KNOWN_DIFF` 为准
@@ -396,6 +396,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | 2026-09-12 | **U11 落地，对拍 `5/26` → `14/17`**：①新增 `sqlfmt_ext/whitespace.py::merge_whitespace_runs`；②新增 `sqlfmt_ext/filters/whitespace.py::StripWhitespaceFilter`，在官方 `_stripws()` 之前合并空白段，并换装进 stack（`stack._swap_whitespace_filter`）；③`LayoutPass.process` 入口保留幂等兜底调用。修掉两类问题：`_set_adjacent_ws` 改写错 token（列宽 +1）与官方 `_stripws_identifierlist` 只删 1 个空 token（逗号前残留 1 空格）。8 个用例转正后**重新校准 §4 规则→用例映射**：L3/L6/L7 整条消失，L1 12→8、L2 7→6、A1 6→1。 |
 | 2026-09-12 | 工具整理：`_tmp_cmp.py` 的两侧选项与主套件口径对齐（去掉多传的 `comma_align`、按 `;` 拆分后以空行拼接、支持 `@相对路径` 直接喂 fixture）；`_tmp_*.py` 加入 `.gitignore`（迁移期临时脚本，S7 统一删除）。 |
 | 2026-09-12 | **S5a 落地，对拍 `21/10` → `22/9`**：`policy.MULTIWORD_REGEX` 在 `LATERAL VIEW <白名单 UDTF>` 之后补一条兜底 `(LATERAL\s+VIEW)\b` —— UDTF 不在白名单时（如 `EXPLODE_JSON_ARRAY_JSON`）`lateral`/`view` 会各自成词，`split_words` 的 `LATERAL\s+VIEW` 对两个单词 token 都匹配不上（`match` 是拿整条正则去 search 单个 token 的 normalized），多个 `lateral view` 全被挤在 `from` 行（且旧 fork 靠输入换行侥幸通过，属已知不收敛用例）。→ 转正 `dml/sqltest1_s06`。 |
+| 2026-09-12 | **S6b 第一击：注释前导空白整段搬出组，对拍 `28/3` → `29/2`**。①`grouping._unabsorb_trailing_comments` 里「吃掉注释前导空白」原来是 **`if` 只吃一个 token** —— 分组阶段空白是**逐字符** token（U11 家族第 N 次），输入里 7 个空格只吃掉 1 个，剩 6 个留在**项内**，而 `_identifier_layout` 给无别名项算 offset 要用 `len(项的末行)`，于是 `max_as_offset` 被抬高 1、**整列连带 +1**（`window/sqltest6_s03` 的 `select a      ,` 变 7 格、`b as b1` 变 `b  as b1`）→ 改成 `while` 整段吃。②但①把注释搬回同层后，`passes/layout._process_comment` 的 M_OPEN 支原来靠 `_ends_with_comment(前一段以注释结尾)` 认「注释串延续」，此时后续成员是**同层并列的注释**，认不出来 → `cte/sqltest2_s02` 退回列 0；补一条「紧邻的前一个非空白兄弟本身就是注释」的判定。**两条必须一起改**。`window/sqltest6_s03` 转正。 |
 | 2026-09-12 | **U13 落地（S6c）：CREATE+TABLE 早退补包，对拍 `27/4` → `28/3`**。官方 `group_functions` 开头「本层同时有 `CREATE`+`TABLE` 且无 `AS` → 整条 `return`」，fork 没有这个条件 → `duplicate key(id,name)` / `range(date_trunc(…))` / `hash(ID)` 在 fork 里是 `Function`，官方这边退化成裸 `Name`+`Parenthesis`，被字段列表分支按 `(a,b,c)` 展开。新增 `grouping._wrap_create_table_calls`（+`_wrap_bare_calls`/`_call_head`）：**在官方分组之后**把本层「`Name`/`Identifier[Name]`/非子句 `Keyword` + 紧随 `Parenthesis`」包成 `sql.Function`（放之后而不是之前：之前括号还没成组，得先替官方跑 `group_parenthesis`，会打乱官方各步骤的先后假设）。`ddl/sqltest0_s01` 转正。 |
 | 2026-09-12 | **U16：官方词表缺 `DATETIME`（分词差异），对拍 `26/5` → `27/4`**。官方 `Name.Builtin` 段与旧 fork **逐条相同**，缺的只是 `DATETIME` —— fork 的关键字正则不要求词尾边界，`DATE`（`Name.Builtin`）会把 `DATETIME` 一起前缀命中；官方是整词匹配，于是 `datetime` 落成普通 `Name`，被 `group_identifier` 与字段名粘成一个 `Identifier` → `_create_field_lines` 的类型列取不到 token → **整条 DDL 字段对齐的列基准全错**。修法：`policy.KEYWORDS_TYPES = {"DATETIME": T.Name.Builtin}` + `DialectLexer.default_initialization` 里 `add_keywords`（与 `KEYWORDS_DORIS` 同渠道）。`ddl/sqltest0_s02` 转正；`ddl/sqltest0_s01` 的**对齐**部分也随之修好，残差只剩 U13。**定位手法**：`_tmp_ddlprobe.py --fork/--new` 打两侧 `field_lines` / 每列 `max_offset` / 每个 token 的 offset，一眼看出 fork 的 `['id2','datetime',…]` 对我们变成了 `['id2 datetime', None, …]`。 |
 | 2026-09-12 | **S6 起点即回本：U15 分组差异，对拍 `24/7` → `26/5`**。官方 `group_identifier_list` 的 `valid_next` 认 `T.Keyword`，于是**尾逗号**后面的子句关键字（`from`）被当成下一个列表项**吞进列表**：`select (1) as wc, F_USER_CODE as POSTUSERCODE , from …` 的列表变成 `…, POSTUSERCODE , from`，列对齐于是按「`from` + 表名」算基准 → 末项少一格、`from` 行被补出一大段空白。新增 `grouping._trim_clause_tail`（**必须在 `_walk` 之后**，否则 `_group_level` 会把它重新吞回；只处理「尾逗号 + 子句关键字」形状，关键字前必须是逗号，连同逗号与空白退回父层）。`nested/sqltest3_s02`、`window/sqltest6_s01` 转正。**再次印证元规则：列对齐错乱先怀疑分组。** |
@@ -417,7 +418,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 
 ```powershell
 .venv\Scripts\python.exe -m pytest tests/ -q            # 170 passed, 6 xfailed（旧 fork，必须保持）
-.venv\Scripts\python.exe -m pytest tests_migration/ -q  # 28 passed, 3 xfailed（新外挂，进度条；另有 1 条有意偏离是断言项）
+.venv\Scripts\python.exe -m pytest tests_migration/ -q  # 29 passed, 2 xfailed（新外挂，进度条；另有 1 条有意偏离是断言项）
 .venv\Scripts\python.exe _tmp_check.py                  # 逐用例精确 diff（当前唯一主力诊断）
 ```
 
@@ -638,6 +639,22 @@ fork 明确会正常建列表）被一起跳掉、内层列表被摊平。fork �
 > 但 **`cte/sqltest2_s02` 变红**（它需要那段空白留在组里）。所以只差一个**形状判据**。
 > 下次开工第一步：`python _tmp_align_probe.py --fork/--new "@tests/fixtures/cases/cte/sqltest2_s02.sql"`
 > 对比两侧组尾形状（探针的 `--fork` 模式已在本轮补上），定好「什么时候整段吃、什么时候只吃一个」再改。
+>
+> **第十一轮结论（已落地，见 §8 变更记录）**：判据不用再定 —— 直接**整段吃**（`while`）即可，
+> 但必须**同时**改 `passes/layout._process_comment` 的 M_OPEN 支：补一条
+> 「紧邻的前一个非空白兄弟本身就是注释」也算法注释串延续（整段搬出后，注释串的后续成员是
+> **同层并列**的注释，原来的 `_ends_with_comment(前一段以注释结尾)` 认不出来）。
+> **两条是一对，拆开会各红一个**（只改前者 → `cte/sqltest2_s02` 退回列 0；只改后者 → 无效）。
+> `window/sqltest6_s03` 已转正 → 对拍 `29/2`。
+>
+> **S6b 剩余 2 个（交接）**：
+> - `case/sqltest4_s01`：末项 `rn       ,` 我们**多 2 格**，且 `t.*` **没被断到下一行**
+>   （我们 `… asc)    rn         , t.*`，期望 `rn       ,` + 换行 + `       t.*`）。
+>   `t.*` 是 **Wildcard 项**，重点看 `get_identifiers()` / `_identifier_layout` 对它的处理
+>   （是否被当成可换行的项、`as_offset` 怎么算）。先
+>   `_tmp_align_probe.py --fork/--new "@tests/fixtures/cases/case/sqltest4_s01.sql"` 两侧对照。
+> - `nested/sqltest3_s01`：`end` 后逗号列我们**窄很多**（期望对齐到很宽的一列 → 目标列由
+>   列表里某个长项决定）。同上先两侧对照。
 > 现网代码保持 `if`（两套件 `28/3` + `170/6` 绿）。
 
 *S6b —— 列表末尾列（`case/sqltest4_s01`、`nested/sqltest3_s01`、`window/sqltest6_s03`）*
