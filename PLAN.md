@@ -650,9 +650,43 @@ fork 明确会正常建列表）被一起跳掉、内层列表被摊平。fork �
 > **S6b 剩余 2 个（交接）**：
 > - `case/sqltest4_s01`：末项 `rn       ,` 我们**多 2 格**，且 `t.*` **没被断到下一行**
 >   （我们 `… asc)    rn         , t.*`，期望 `rn       ,` + 换行 + `       t.*`）。
->   `t.*` 是 **Wildcard 项**，重点看 `get_identifiers()` / `_identifier_layout` 对它的处理
->   （是否被当成可换行的项、`as_offset` 怎么算）。先
->   `_tmp_align_probe.py --fork/--new "@tests/fixtures/cases/case/sqltest4_s01.sql"` 两侧对照。
+>   **已定位到分组层（第十二轮）**：两侧探针对照显示 fork 的 select 列表有 **6 项**，
+>   最后一项是 `as_offset=11 alias_len=4 as=N text='t.*'`；**我们只有 5 项、缺 `t.*`**
+>   —— `t.*` 掉在**语句层**（`_tmp_nt.py @fixture` 里显示为顶层的 `Identifier 't.*'`），
+>   所以它既没换行也不参与对齐（末项 `is_last` 的 +1 也就落到了错的项上，多出那 2 格）。
+>   **已用「关掉它做对照」排除**：`_trim_clause_tail`（U15 那条）**不是**元凶（关掉后 `t.*`
+>   仍在列表外）。下一步：拿 `_tmp_nt.py @fixture` 与 `_tmp_forkidx.py`（同一 fixture）对比
+>   **列表边界**，重点怀疑两点：①第 5 项里的 `--` 注释把官方的列表构建提前截断，
+>   而我们 `_group_level` 的续接没接上；②`t.*` 是 `Identifier[t, Wildcard]`，
+>   官方 `group_identifier_list` 的 `imt(i=sqlcls…)` 对它的判定与 fork 不同。
+
+### 9.4 S7 执行卡（含「有意偏离」处置决定）
+
+> 决策人：AI（用户 2026-09-12 授权「你最佳实践处理」）。执行顺序**不可调换**，
+> 每步一个独立提交，失败就 `git revert` 单个提交即可回退。
+
+**S7-a 门禁转正**：新增/改造以**新实现**为准的收敛与幂等门禁（把 `tests/test_sqlfmt_convergence.py`
+的 `KNOWN_DIVERGENT` 那 6 条按新实现在此重测一遍）。**旧套件先不删**，它还是 oracle。
+
+**S7-b 入口切换**：`sqlfmt.py` 的 `sqlfilefmt()` 改为调用 `sqlfmt_ext.format_statements`，
+`DEFAULT_OPTIONS` 保持同名同义；`sqlparse` 从 vendored 目录变为 pip 依赖（`>=0.6,<0.7`）。
+
+**S7-c 删 fork（独立提交，用户指定）**：`git rm -r sqlparse/`；处置依赖它的 `tests/`
+（迁移到新实现或按需删除）；删掉 `tests_migration/conftest.py` 里的 `sys.path` 共存 hack。
+**提交信息里必须写清「这是不可逆动作、回退方式」**。
+
+**S7-d 有意偏离处置（本次决定：正式重定基线，清单归零）**
+- **做法**：删 fork 之后，用**另一个独立提交**把 `tests/fixtures/cases/case/sqltest4_s03.sql`
+  改成本实现的口径（`case` 与首个 `when` 同行），随后删掉
+  `tests_migration/test_parity.py` 里的 `DEVIATIONS` 条目（该条的「变换失效」守卫会自动提示），
+  `case/s03` 变成普通通过用例，**偏离清单归零**。
+- **理由（最佳实践）**：①删 fork 前不能改——主套件还钉着旧基线，改了立刻红；
+  ②删 fork 后若留着「断言型偏离」，等于把一个**已经没有对照对象**的特殊分支长期养在测试里
+  （维护成本 + 后人困惑）；③单独一个提交，回退就是 revert 它。
+- **提交信息模板**：`chore(baseline): 重定 case/sqltest4_s03 基线（case 与首个 when 同行）；旧基线依赖输入换行，口径 2026-09-12 决策 — 至此有意偏离清单归零`。
+
+**S7-e 收口**：README / AGENTS.md 更新（删掉「迁移期两个 sqlparse」「两套件分开跑」等迁移期说明），
+`_tmp_*.py` 一并删除（PLAN §9.3 顶部已有约定）。
 > - `nested/sqltest3_s01`：`end` 后逗号列我们**窄很多**（期望对齐到很宽的一列 → 目标列由
 >   列表里某个长项决定）。同上先两侧对照。
 > 现网代码保持 `if`（两套件 `28/3` + `170/6` 绿）。
