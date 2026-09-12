@@ -103,10 +103,10 @@ S7 删除 fork 后该 conftest 一并删除。
 | 仅空白宽度不同 | 6 / 31 |
 | 换行骨架不同 | 24 / 31 |
 
-> **当前进度（2026-09-12，S5 部分完成）**：`pytest tests_migration/ -q` → **`22 passed, 9 xfailed`**。
-> 剩余 9 个按根因分两组：**S5 结构性折行 2**（`cte/s02` = U14、`case/s03` = 已知不收敛）
-> 与 **S6 列对齐 7**（`case/s01`、`ddl/s01 s02`、`nested/s01 s02`、`window/s01 s03`），
-> 见 §4 与 §9.3。
+> **当前进度（2026-09-12，S5c 已定性）**：`pytest tests_migration/ -q` → **`23 passed, 8 xfailed`**
+> **+ 1 条有意偏离**（`case/s03`，已是断言项，见 §4「对旧 fork 的有意偏离清单」）。
+> 剩余 8 个待做：**S5 折行 1**（`cte/s02` = U14）与 **S6 列对齐 7**
+> （`case/s01`、`ddl/s01 s02`、`nested/s01 s02`、`window/s01 s03`），见 §4 与 §9.3。
 > （空白归一化 U11 曾一次性把 8 个用例从「待实现规则」变成逐字节一致——它们的首处差异
 > 本来就是该处 ±1 列宽，不是换行骨架差异，见 §3.5、§9.2。）
 
@@ -125,11 +125,12 @@ S7 删除 fork 后该 conftest 一并删除。
 | 套件 | 命令 | 现状 |
 |---|---|---|
 | 主套件（旧 fork） | `.venv\Scripts\python.exe -m pytest tests/ -q` | `170 passed, 6 xfailed` |
-| 对拍进度条（新外挂） | `.venv\Scripts\python.exe -m pytest tests_migration/ -q` | `22 passed, 9 xfailed` |
+| 对拍进度条（新外挂） | `.venv\Scripts\python.exe -m pytest tests_migration/ -q` | `23 passed, 8 xfailed` + 1 有意偏离 |
 | 诊断报告 | `.venv\Scripts\python.exe _tmp_gap.py` | 逐用例首处差异 + 异常容错 |
 
-已复现 21：以 §4 的规则→用例映射与 `tests_migration/test_parity.KNOWN_DIFF` 为准
-（后者只剩 10 条未复现条目，且逐条带根因，不再手工维护重复名单）。
+已复现 23：以 §4 的规则→用例映射与 `tests_migration/test_parity.KNOWN_DIFF` 为准
+（后者只剩 8 条未复现条目，且逐条带根因；另有 1 条**有意偏离**登记在
+`test_parity.DEVIATIONS`，是断言项而非待做项，见 §4。不再手工维护重复名单）。
 
 ### 3.4 上游 0.6.0 与旧 fork 的语义差异清单（迁移的真实成本）
 
@@ -244,15 +245,32 @@ fork 侧 `ws=' ' ws_idx=1`）；两侧 `_identifier_layouts` 的汇总值**完�
 ```
 S6 列对齐 (7): case/s01 | ddl/s01 | ddl/s02 | nested/s01 | nested/s02
               window/s01 | window/s03
-S5 结构性折行 (2): cte/s02（U14：`)` 与 `over` 之间的注释挡住官方并入 Function）
-                  | case/s03（首个 when 独占行，已知不收敛）
+S5 结构性折行 (1): cte/s02（U14：`)` 与 `over` 之间的注释挡住官方并入 Function）
 
-合计 7+2 = 9，与当前 9 个 xfailed 一一对应
+合计 7+1 = 8，与当前 8 个 xfailed 一一对应
+
+有意偏离 (1): case/s03（`case` 与首个 `when` 同行 —— 旧基线那处折行依赖输入换行，
+             按结构性口径重定，见下方清单）
 ```
 
 > `ddl/s01` 除了列对齐，还差一条**分组**差异（官方 `group_functions` 对
 > CREATE+TABLE 提前 `return`，fork 没有这个条件 → `duplicate key(...)` /
 > `range(...)` / `hash(...)` 被字段列表分支误展开），见 §9.3「S4c」。
+
+#### 对旧 fork 的有意偏离清单（S7 交付必须交代）
+
+**定义**：新架构**刻意不复现**旧基线的用例。与「未复现」不同，这些不是待做项，而是**口径重定**。
+登记在 `tests_migration/test_parity.DEVIATIONS`，并且是**断言项而不是 xfail** —— 基线或实现任一侧
+漂移都会红（xfail 会让漂移静默通过）。每项必须写清「差在哪、为什么」。
+
+| # | 用例 | 旧基线 | 新口径 | 为什么 |
+|---|---|---|---|---|
+| 1 | `case/sqltest4_s03` | `case` 与首个 `when` 各占一行 | 首个 `when` 与 `case` 同行：`case when b in ('X', 'Y') then …` | 旧基线**依赖输入换行**（该用例的 `input.sql` 就是 `case` 换行 + `when` 顶格），属 C4 禁止依赖的行为；「同行」才是仓库主导口径 —— `sqltest4_s01`（**没有 input 文件**，即 canonical 即输入，`case` 后仅在有注释时才换行）、`sqltest4_s02`、`dml/sqltest1_s06` 全部同形。与旧基线的差异**仅此一处折行**，`when b = 'NUMBER'    then …` / `else … c` / `end as type_name` 的列对齐逐字节相同。 |
+
+> **迁移期不动 fixture**：`case/sqltest4_s03.sql` 同时是主套件（旧 fork）的期望输出 ——
+> 旧 fork 靠「保留输入换行」产出那个折行，改了它主套件立刻变红（`170 passed, 6 xfailed` 门槛）。
+> 等 S7 删掉 fork 后，若用户认可新口径，再把该 fixture 正式重定并从 `DEVIATIONS` 移除；
+> 届时那个定向变换会失效，`test_parity` 里的 `assert transformed != expected` 会直接报错提醒。
 
 **U9 的教训**：`debug/sqldebug_s01` 首版被归成 A1「列对齐未实现」，真因是**分组**——
 官方 `group_as.valid_prev` 拒绝「关键字作 AS 左值」（旧 fork 放宽成 `True`），
@@ -292,9 +310,8 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | **S5a** | `policy` LATERAL VIEW 分词兜底（L4 多 `lateral view` 各自分行） | +1 | **22 / 9** | ✅ 完成 |
 | **S5b** | U14：`)` 与 `over` 之间的注释挡住官方把 `OVER` 并入 `Function`（`cte/s02`） | +1 | — | ⏳ 下一段 |
 | **S4c** | 官方 `group_functions` 的 CREATE+TABLE 早退严于 fork（`ddl/s01`） | +1 | — | ⏳ 可并入 S6 |
-| **S5c** | `case/s03` 首个 `when` 独占行（**已知不收敛**，需先定规则或重定基线） | +1 | — | ⏳ 需决策 |
 | **S6** | `AlignPass` 列对齐收尾（注释列 / 末尾逗号 / `as` 列 / `from` 缩进） | +7 | **31 / 0** | ⏳ 待做 |
-| **S7** | 收敛 + 幂等 + 入口切换 + 删 fork + 改 AGENTS.md/README | 新实现通过全部 4 套测试 | — | ⏳ 待做 |
+| **S7** | 收敛 + 幂等 + 入口切换 + 删 fork + 改 README + 处置有意偏离清单 | 新实现通过全部 4 套测试 | — | ⏳ 待做（`AGENTS.md` 已按失败模式修订过） |
 | **S8** | 方言层补完（Doris/SelectDB）+ SQL Server 适配 | 方言用例 | — | ⏳ 待做，可并行 |
 
 > 对拍列格式：`passed / xfailed`。
@@ -379,6 +396,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | 2026-09-12 | **U11 落地，对拍 `5/26` → `14/17`**：①新增 `sqlfmt_ext/whitespace.py::merge_whitespace_runs`；②新增 `sqlfmt_ext/filters/whitespace.py::StripWhitespaceFilter`，在官方 `_stripws()` 之前合并空白段，并换装进 stack（`stack._swap_whitespace_filter`）；③`LayoutPass.process` 入口保留幂等兜底调用。修掉两类问题：`_set_adjacent_ws` 改写错 token（列宽 +1）与官方 `_stripws_identifierlist` 只删 1 个空 token（逗号前残留 1 空格）。8 个用例转正后**重新校准 §4 规则→用例映射**：L3/L6/L7 整条消失，L1 12→8、L2 7→6、A1 6→1。 |
 | 2026-09-12 | 工具整理：`_tmp_cmp.py` 的两侧选项与主套件口径对齐（去掉多传的 `comma_align`、按 `;` 拆分后以空行拼接、支持 `@相对路径` 直接喂 fixture）；`_tmp_*.py` 加入 `.gitignore`（迁移期临时脚本，S7 统一删除）。 |
 | 2026-09-12 | **S5a 落地，对拍 `21/10` → `22/9`**：`policy.MULTIWORD_REGEX` 在 `LATERAL VIEW <白名单 UDTF>` 之后补一条兜底 `(LATERAL\s+VIEW)\b` —— UDTF 不在白名单时（如 `EXPLODE_JSON_ARRAY_JSON`）`lateral`/`view` 会各自成词，`split_words` 的 `LATERAL\s+VIEW` 对两个单词 token 都匹配不上（`match` 是拿整条正则去 search 单个 token 的 normalized），多个 `lateral view` 全被挤在 `from` 行（且旧 fork 靠输入换行侥幸通过，属已知不收敛用例）。→ 转正 `dml/sqltest1_s06`。 |
+| 2026-09-12 | **S5c 定性（用户拍板「按 (i) 做」）**：`case` 与首个 `when` 取**同行**口径，`case/sqltest4_s03` 登记为**有意偏离**（`test_parity.DEVIATIONS`：理由 + 对 canonical 的定向变换，**断言**而非 xfail，另加「变换失效即报错」守卫），对拍 `22/9` → **`23/8` + 1 条有意偏离**。**没有改任何 fixture、没动主套件**（s03 的 canonical 同时钉住旧 fork 的输出回归测试，改了主套件立刻红）。§4 新增「对旧 fork 的有意偏离清单」，S7 交付时按此清单向用户交代。 |
 | 2026-09-12 | 按 `improve-agent` 的「历史失败模式 → 指令修订」思路修正 `AGENTS.md`：①修掉事实错误（用例目录 `pytests/` → 实际的 `tests/`，并补上两套件的跑法与门槛）；②补「架构」为迁移期四段流水线（`DialectLexer`→官方分组+补偿→`StripWhitespaceFilter`→`LayoutPass`），旧 fork 标注为仅作 oracle；③新增「硬约束 C1–C5」与两条元规则（**列对齐错乱先怀疑分组**；**结论必须写成最小重现**）；④补诊断工具清单与三个坑（`FilterStack.run` 返回生成器、两实现须分进程、不能比非空白 token 序列）。 |
 | 2026-09-12 | **S4 落地，对拍 `16/15` → `21/10`**（+5：`dml/s01 s02 s04`、`ddl/s03 s06`）：①`grouping.py` 新增 `_pre_wrap_object_name`，官方分组前把 DDL/INSERT 的对象名链预包成 `Identifier`（U12）；②`_SQLCLS` 补 `sql.Parenthesis`，修 `values (…), (…)` 多行值列表不成组；③新增 `_create_guard` + `_flatten_identifier_lists`，复刻 fork 的 CREATE/ALTER「SELECT 前不建列表」守卫并把官方多建的列表摊平；④`_process_parenthesis` 字段列表分支对「首个子列表以注释开头」不再插换行/删空白（注释与 `(` 同行）。主套件保持 `170 passed, 6 xfailed`。`ddl/s01` 残留归 S4c（官方 `group_functions` 的 CREATE+TABLE 早退严于 fork）。 |
 
@@ -386,13 +404,14 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 
 ## 9. 断点续做（下一次会话从这里开始）
 
-> 落盘时间：2026-09-12（第五轮），S1–S4 与 S5a 已完成，**对拍 22/9**，下一段 = S5b（U14）。
+> 落盘时间：2026-09-12（第六轮），S1–S4、S5a、S5c 已完成，**对拍 23/8 + 1 条有意偏离**，
+> 下一段 = S5b（U14）。
 
 ### 9.1 复现当前状态
 
 ```powershell
 .venv\Scripts\python.exe -m pytest tests/ -q            # 170 passed, 6 xfailed（旧 fork，必须保持）
-.venv\Scripts\python.exe -m pytest tests_migration/ -q  # 22 passed, 9 xfailed（新外挂，进度条）
+.venv\Scripts\python.exe -m pytest tests_migration/ -q  # 23 passed, 8 xfailed（新外挂，进度条；另有 1 条有意偏离是断言项）
 .venv\Scripts\python.exe _tmp_check.py                  # 逐用例精确 diff（当前唯一主力诊断）
 ```
 
@@ -426,7 +445,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | S5a | L4 多 `lateral view` 各自分行 | `dml/s06` | `policy.MULTIWORD_REGEX` | ✅ 完成（21 → 22） |
 | S5b | U14：`)` 与 `over` 之间的注释挡住官方并入 `Function` | `cte/s02` | `grouping.py` + `passes/layout.py` 的 `Over` 处理 | ⏳ 下一段 |
 | S4c | 官方 `group_functions` 的 CREATE+TABLE 早退严于 fork | `ddl/s01` | `grouping.py` + `passes/layout.py::_process_parenthesis` | ⏳ 可与 S6 合并 |
-| S5c | `case` 后首个 `when` 独占行（**已知不收敛**，先定规则或重定基线） | `case/s03` | `passes/layout.py::_process_case` | ⏳ 需决策 |
+| S5c | `case` 与首个 `when` 同行（口径重定 + 有意偏离登记） | `case/s03` | `tests_migration/test_parity.py::DEVIATIONS` | ✅ 完成（22 → 23） |
 | S6 | 列对齐收尾（末尾逗号列 / `as` 列 / 注释列 / `from` 缩进） | `case/s01`、`ddl/s01 s02`、`nested/s01 s02`、`window/s01 s03` | `passes/align.py` | ⏳ |
 | S7 | 收敛 + 幂等 + 入口切换 + 删 fork + 改 AGENTS/README + 删 `_tmp_*` | — | — | ⏳ |
 
@@ -530,10 +549,22 @@ Identifier[Function[ROW_NUMBER()]] ]`，**`ws` + `Comment` + `Identifier[Over[..
 建议先按做法 1 试，用 `_tmp_nt.py` / `_tmp_forkidx.py` 对齐两侧树形，再跑
 `_tmp_check.py cte/sqltest2_s02 -v`。
 
-**S5c 起点（`case/sqltest4_s03`，未做）**：`case` 后首个 `when` 独占行。该期望输出在旧实现里
-是**依赖输入换行**判定的（已知不收敛用例），官方 strip 之下没有那个换行可用，因此必须先定：
-①定义一条结构性规则（如「`case` 后首个 `when` 一律换行」）；②或把该 fixture 视为待重定基线。
-**动手前先与用户确认口径。**
+**S5c 已收（2026-09-12，用户拍板口径）→ 对拍 `22/9` 变 `23/8` + 1 条有意偏离**：
+`case` 与首个 `when` **同行**（`case when b in ('X','Y') then …`），把 `case/sqltest4_s03` 登记为
+**有意偏离**而不是改 fixture —— 详见 §4「对旧 fork 的有意偏离清单」。
+
+决策依据（当时摆给用户的三条证据，别再重推）：
+1. 旧基线那处折行**依赖输入换行**（该用例 `input.sql` 就是 `case` 换行 + `when` 顶格），
+   属 C4 禁止依赖的行为，算不上可移植基线；
+2. 「同行」是主导口径且**当前全通过**：`sqltest4_s01`（**无 input 文件**，`case` 后仅在有注释时
+   换行）、`sqltest4_s02`、`dml/sqltest1_s06`；只有 s03 一例是折行形；
+3. 差异**仅此一处折行**：`when b = 'NUMBER'    then …` / `else … c` / `end as type_name`
+   的列对齐逐字节相同（`_tmp_check.py -v` 的 6/6 行差异全是这一处引起的整体平移）。
+
+实施落点：`tests_migration/test_parity.py` 新增 `DEVIATIONS` 表（理由 + 对 canonical 的定向变换
+`re.sub(r"case\n\s*when", "case when", exp, count=1)`），**断言**而非 xfail；并加
+`assert transformed != expected` 守卫，S7 正式重定基线后这条会主动报错提醒删除。
+**主套件与任何 fixture 都没动**（改了会破 fork 的输出回归测试）。
 
 ### 9.4 诊断工具（仓库根 `_tmp_*.py`，已在 `.gitignore`，S7 统一删除）
 
