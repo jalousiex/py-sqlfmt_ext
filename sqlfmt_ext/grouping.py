@@ -272,6 +272,9 @@ def _group_level(tlist):
             tidx = nidx
 
     def valid_prev(token):
+        # 试过在这里外加 `or isinstance(token, sql.IdentifierList)`（想让同层已有列表
+        # 被「扩进去」），对 `case/sqltest4_s01` **无效果且无回归** —— 说明官方 `_group`
+        # 的扩展触发点不在这个回调上，见 PLAN §9.3「S6b」第十二轮补记。
         return _is_comment(token) or _real_item(token)
 
     def valid_next(token):

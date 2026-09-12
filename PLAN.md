@@ -672,6 +672,16 @@ fork 明确会正常建列表）被一起跳掉、内层列表被摊平。fork �
 >   「同层 + 紧邻」时做，避免把 `ddl` 那类多列表场景串起来（跑全量对拍验证）。
 >   **工具缺口**：`_tmp_forkidx.py` **还不支持 `@相对路径`**（它把 `@tests/...` 当 SQL 解析，
 >   会出现 `Operation '/'` 这种假 token）——下一轮先给它补上，再和 `_tmp_nt.py` 两侧对齐列表边界。
+>   **已补（第十三轮）**：`_tmp_forkidx.py` 现在支持 `@相对路径` ✓。补完立刻拿到 fork 的
+>   `group_tokens` 轨迹，**直接印证了修法方向**：fork 是**逐步扩展同一个列表** ——
+>   `IdentifierList start=5 end=9 → end=10 → …`（`start` 不变、`end` 递增），
+>   也就是官方的 `extend=True` 一直在把「尾逗号 + 下一项」并进同一个列表。
+>   **试过的第一步**：在 `_group_level` 的 `valid_prev` 里外加
+>   `or isinstance(token, sql.IdentifierList)` —— **对 `case/sqltest4_s01` 无效果、也无回归**，
+>   说明触发点不在这个回调上（已回滚，只留注释说明）。
+>   **下一步（下一位接手从这里开始）**：**diff 官方 `engine/grouping.py::_group` 与旧 fork 的
+>   `_group`**（fork 的 `grouping.py` 与官方差 432 行，很可能就改在这里）；重点看 fork 是怎么
+>   在 `start` 已经是同类组时「扩进去」而不是「新建组」的，再把这一条搬进我们的续接层。
 
 ### 9.4 S7 执行卡（含「有意偏离」处置决定）
 
