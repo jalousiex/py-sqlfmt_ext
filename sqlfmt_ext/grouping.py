@@ -399,8 +399,11 @@ def _create_guard(tlist):
 
     - ``CREATE``/``ALTER`` 且整条语句**没有** ``SELECT`` → 直接 ``return``，
       整条语句一个列表都不建；
-    - 有 ``SELECT`` → 只跳过 ``SELECT`` **之前**的子组（典型是 ``create view x
-      (col…) as select …`` 的字段列表括号），``SELECT`` 之后照常。
+    - 有 ``SELECT`` → 只跳过 ``with`` / ``select`` / ``values``（**最先出现的那个**）
+      **之前**的子组（典型是 ``create view x (col…) as select …`` 的字段列表括号），
+      之后照常。边界不能只认 ``SELECT``：``create view … as -- with c as (select …)
+      … select * from c`` 里 CTE 体括号在 ``with`` 之后，fork 是会正常建列表的
+      （漏掉就表现为 CTE 里的 select 列表不展开，``cte/sqltest2_s02``）。
 
     官方 ``group_identifier_list`` 没有这层守卫，字段列表括号里会多出一个
     ``IdentifierList``，于是 ``LayoutPass._process_parenthesis`` 的字段列表分支
