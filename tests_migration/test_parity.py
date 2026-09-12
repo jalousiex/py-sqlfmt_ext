@@ -40,8 +40,6 @@ KNOWN_DIFF = {
     "dml/sqltest1_s04": _FIELD_LIST,
     # --- LayoutPass：语句/CTE 换行 ---
     "dml/sqltest1_s06": "多个 LATERAL VIEW 未各自分行（LayoutPass）",
-    # --- AlignPass：列对齐 ---
-    "debug/sqldebug_s01": _ALIGN,
 }
 
 

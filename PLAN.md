@@ -236,18 +236,25 @@ fork 侧 `ws=' ' ws_idx=1`）；两侧 `_identifier_layouts` 的汇总值**完�
 `_pull_inline`(131)、`_prev_non_whitespace`(149)、`_fold_case_newlines`(395)。
 这些是「strip 保留换行」的补丁，C4 下天然消失。
 
-### 规则 → 用例映射
+### 规则 → 用例映射（2026-09-12 第三轮刷新）
+
+分类口径用 `_tmp_check.py` 的摘要（「S 类」= 该用例每一处差异行都只是空白宽度/列对齐）。
+**L1 已清零**：剩下的注释类用例（`cte/s02`、`nested/s01 s02`、`window/s01 s03`）
+首处差异已全部退化为空白宽度，即注释断行本身已经对了。
 
 ```
-L1  (8): case/s01 | comma/s02 | cte/s02 | dml/s01
-         nested/s01 s02 | window/s01 s03
-L2  (6): ddl/s01 s02 s03 s06 | dml/s02 s04
-L4  (1): dml/s06
-L5  (1): case/s03
-A1  (1): debug/sqldebug_s01
+S6 对齐 (7): cte/s02 | nested/s01 | nested/s02 | window/s01 | window/s03
+             ddl/s02 | ddl/s06
+S4 字段列表 (5): ddl/s01 | ddl/s03 | dml/s01 | dml/s02 | dml/s04
+S5 (3): case/s01（CASE 内 as 列对齐 + 折行）| case/s03（首个 when 独占行）
+        | dml/s06（L4 多 LATERAL VIEW）
 
-合计 8+6+1+1+1 = 17，与当前 17 个 xfailed 一一对应（无遗漏、无重复）
+合计 7+5+3 = 15，与当前 15 个 xfailed 一一对应
 ```
+
+**U9 的教训**：`debug/sqldebug_s01` 首版被归成 A1「列对齐未实现」，真因是**分组**——
+官方 `group_as.valid_prev` 拒绝「关键字作 AS 左值」（旧 fork 放宽成 `True`），
+`select level as depth` 直接散架。凡是「列对齐整体乱掉」的用例，先查分组再查对齐。
 
 **首版映射（U11 之前，30 个 xfailed）供追溯**：
 
@@ -278,10 +285,10 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | **S0** | 计划落地 + 骨架 + 对拍进度条 | — | 1 / 30 | ✅ 完成 |
 | **S1** | 把布局引擎移植到官方 0.6.0 之上：方言 lexer、分词补丁、`LayoutPass`（断行+对齐规则集）、摘掉官方换行 filter | 骨架跑通且不崩 | **4 / 27** | ✅ 完成 |
 | **S2** | 上游语义差异补偿 U5–U7（`Case.get_cases` 注释占位、`Where.M_CLOSE`、`get_real_name`） | 实测收敛为 1 项 | 4 / 27 | ✅ 完成：U5 落地；U6/U7 经检索确认无影响（见 §3.4）。`case/sqltest4_s02` 转正，`s03` 转 KNOWN_DIFF（等 L5 结构性规则） |
-| **S3** | `LayoutPass` L1 注释强制换行（确定性规则：`--` 与 `/*-*/` 强制断行） | +8 | **14 / 17** | 🔄 进行中：U11 已落地（+9，见 §3.5），L1 的结构性规则重写待做 |
-| **S4** | `LayoutPass` L2 括号字段列表展开（残留疑为分组口径差异，待核） | +6 | 20 / 11 | ⏳ 待做 |
-| **S5** | `LayoutPass` L4 多 LATERAL VIEW（L3 已随 U11 转正） | +1 | 21 / 10 | ⏳ 待做 |
-| **S6** | `AlignPass` A1–A3 列对齐（含 CJK 宽度口径） | +1 | **31 / 0** | ⏳ 待做 |
+| **S3** | `LayoutPass` L1 注释强制换行（结构性规则：`--` 与 `/*-*/` 强制断行、连续注释各自成行） | +11 | **16 / 15** | ✅ 完成（U11 + S3c + U9 分组补偿，L1 已清零） |
+| **S4** | `LayoutPass` L2 括号字段列表展开（残留疑为分组口径差异，待核） | +5 | 16 / 15 | ⏳ 待做 |
+| **S5** | `LayoutPass` L4 多 LATERAL VIEW + L5 CASE 折行 | +3 | 19 / 12 | ⏳ 待做 |
+| **S6** | `AlignPass` 列对齐收尾（注释列 / 末尾逗号 / `as` 列） | +7 | **31 / 0** | ⏳ 待做 |
 | **S7** | 收敛 + 幂等 + 入口切换 + 删 fork + 改 AGENTS.md/README | 新实现通过全部 4 套测试 | — | ⏳ 待做 |
 | **S8** | 方言层补完（Doris/SelectDB）+ SQL Server 适配 | 方言用例 | — | ⏳ 待做，可并行 |
 
@@ -398,21 +405,44 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 `' '*82` 里只删掉 1 个，剩下的 1 个空格留在逗号前，与 `AlignMixin` 填好的对齐
 空白叠加 → 非 AS 字段的末尾逗号整体多 1 列。
 
-### 9.3 下一步（严格按优先级）
+### 9.3 分段任务卡（一次只做一段；每段结束跑两套测试 + 提交）
 
-1. **S3 收尾：L1 注释强制换行的结构性重写。** 当前 `_process_comment` 是照搬 fork，
-   其中 `prev_.is_newline` 分支**依赖输入换行**（不收敛）。要改成结构性判定：
-   - `--` 行注释与 `/*-*/` 强制断行标记 → 前后各自成行；
-   - 普通 `/* */` 块注释 → 跟随原分组（不强制断行）；
-   - 行首与行末注释的对齐分支（A3）保留。
-   剩余 8 个 L1 用例：`case/s01`、`comma/s02`、`cte/s02`、`dml/s01`、
-   `nested/s01 s02`、`window/s01 s03`。
-2. **S4：L2 括号字段列表。** 先**核对分组**：`_process_parenthesis` 与 fork 逐行一致，
-   因此 `ddl/s01..s06`、`dml/s02/s04` 的残留高度怀疑是**树/分组差异**（实测
-   `duplicate key(id,name)` 与 `date_trunc(p_dt,'month')` 在官方侧被当成字段列表展开、
-   fork 侧不展开）。核对手法：`_tmp_forkidx.py` 打 fork 树 + 新实现侧打同点位树对比
-   `Parenthesis.parent` / `in_root` 判定。
-3. **S5**（只剩 1 个：多 LATERAL VIEW）→ **S6**（只剩 `debug/sqldebug_s01`）→ **S7 收尾**。
+> 分段原则：**一段 = 一条规则 / 一个根因**，上下文只读该段需要的文件；
+> 需要跨文件探索的先用 `code-explorer` 子代理，把结论（不是文件内容）带回主线。
+> 每段收尾动作固定：`pytest tests/ -q`（须 170 passed, 6 xfailed）→
+> `pytest tests_migration/ -q` → 更新 `test_parity.KNOWN_DIFF` → 更新本文件进度 → commit。
+
+| 段 | 目标 | 涉及用例（当前 15 xfailed） | 主读文件 | 状态 |
+|---|---|---|---|---|
+| S4 | L2 括号字段列表展开（**先核分组口径**） | `ddl/s01 s03`、`dml/s01 s02 s04` | `passes/layout.py::_process_parenthesis/_process_identifierlist` + `grouping.py` | ⏳ 下一段 |
+| S5 | L4 多 `LATERAL VIEW` 各自分行；L5 `case` 后首个 `when` + CASE 折行 | `dml/s06`、`case/s03`、`case/s01` | `_is_lateral_view_list`、`_process_case` | ⏳ |
+| S6 | 列对齐收尾（末尾逗号列 / `as` 列 / 注释列 / `from` 缩进） | `cte/s02`、`nested/s01 s02`、`window/s01 s03`、`ddl/s02 s06` | `passes/align.py` | ⏳ |
+| S7 | 收敛 + 幂等 + 入口切换 + 删 fork + 改 AGENTS/README + 删 `_tmp_*` | — | — | ⏳ |
+
+**分段推进的操作要点（省上下文的做法）**
+1. **先分类再动手**：`python _tmp_check.py` 只看摘要（每例首 2 处差异 + 「是否只是空白宽度」），
+   一条命令拿到全部 15 个用例的格局，再决定这段做哪一类。
+2. **一次只读该段需要的文件**：S4 只读 `layout.py` 的 `_process_parenthesis` /
+   `_process_identifierlist` + `grouping.py`；跨文件搞清楚「官方某步是不是在别处发生」时，
+   用 `code-explorer` 子代理，只把结论带回主线。
+3. **最小重现优先**：`_tmp_cmp.py --fork/--new "<最小片段>"`，两侧并排看一眼就能定性；
+   能用 1 行 SQL 复现就不要拿 40 行 fixture 试。
+4. **对齐类问题先怀疑分组**（U9 的教训），分组对了再查 `align.py`。
+
+**S3c 已收（2026-09-12）**：Comment 组内相邻注释强制各自成行（结构性，不依赖输入换行），
+`comma/sqltest7_s02` 转正。踩坑：`sql.Comment` 是**分组类**，裸注释 token 属于
+`T.Comment` 的**token 类型**，判定要用 `isinstance(tk, sql.Comment) or tk.ttype in T.Comment`。
+
+**U9 已收（2026-09-12）**：官方 `group_as.valid_prev` 拒绝关键字作 AS 左值，旧 fork 放宽成
+`True`。补偿 = 在官方分组**之前**把那个关键字本身包成 `Identifier`（其余全交给官方）：
+`group_identifier` 先于 `group_as` 把右值裸 `Name` 包成 `Identifier`，于是官方树天然是
+`Identifier[level, ws, as, ws, Identifier[depth]]`，与 fork 完全同形。`debug/sqldebug_s01` 转正。
+**必须排除 `END`**：它是 `sql.Case.M_CLOSE`，`group_case` 早于 `group_as` 且
+`token_next_by` 不递归，提前包住 `END` 会让 CASE 分组整个散架（`case/sqltest4_s02` 曾因此回归）。
+
+**S4 起点（交接信息）**：剩下 3 类，`_tmp_check.py` 摘要直接给出：
+S6 对齐 7 个、S4 字段列表 5 个、S5 折行 3 个。注释类（L1）已清零，不用再碰 `_process_comment`；
+`case/s01` 的 21 处差异里夹着 CASE 折行，归 S5 一并看。
 
 ### 9.4 诊断工具（仓库根 `_tmp_*.py`，已在 `.gitignore`，S7 统一删除）
 

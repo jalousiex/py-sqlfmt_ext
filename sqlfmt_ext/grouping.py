@@ -26,6 +26,13 @@
 3. **官方 ``align_comments`` 会把注释并入前一个 ``TokenList``**（官方分组之后补）。
    注释因此成了那个组的末尾 token，后续 token（典型是同级闭括号）在 ``LayoutPass``
    里对不齐。旧 fork 的分组从不并入。见 ``_unabsorb_trailing_comments``。
+
+4. **官方 ``group_as`` 不接受「关键字作别名左值」**（官方分组之前补）。
+   官方 ``valid_prev`` 是 ``token.normalized == 'NULL' or not token.is_keyword``，
+   而旧 fork 放宽成 ``True``（源码注释：「支持关键字作为字段名」）。
+   ``level``/``rows`` 这类词在官方词表里是关键字，于是 ``select level as depth``
+   的 ``level as depth`` 不成组，``group_identifier_list`` 会把 ``level`` 当成独立
+   列表项，字段列表被切碎、列对齐整体失效。见 ``_group_as_with_keyword``。
 """
 
 from sqlparse import sql
@@ -111,6 +118,62 @@ def _group_interval_literals(tlist):
     )
     official._group(  # noqa: SLF001 官方遍历原语，配合本项目判定回调使用
         tlist, sql.TypedLiteral, match_to_extend, valid_prev, valid_final, post, extend=True
+    )
+
+
+_WRAP_ALIAS_LHS_EXCLUDE = frozenset({
+    # 官方 valid_prev 已显式放行 NULL，不需要我们掺和
+    "NULL",
+    # END 是 sql.Case 的 M_CLOSE，而官方 group_case 早于 group_as 运行、
+    # 且 token_next_by 不递归子组：提前把 END 包成 Identifier 会让 group_case
+    # 找不到收尾关键字，整个 CASE 分组散架（case/sqltest4_s02 的回归）。
+    "END",
+})
+
+
+def _wrap_keyword_alias_lhs(tlist):
+    """把官方 ``group_as`` 拒绝的「关键字左值」预包成 ``Identifier``。
+
+    官方 ``group_as.valid_prev`` 是 ``token.normalized == 'NULL' or not token.is_keyword``：
+    **关键字不能作 AS 的左值**。旧 fork 放宽成 ``True``（源码注释「支持关键字作为字段名」）。
+    ``level``/``rows`` 这类词在官方词表里是关键字，于是 ``select level as depth`` 里
+    ``level as depth`` 不成组，``group_identifier_list`` 会把 ``level`` 当独立列表项，
+    字段列表被切碎、列对齐整体失效（``debug/sqldebug_s01``）。
+
+    这里**只做一件最小的事**：把该关键字本身包成 ``sql.Identifier``。分组时机在官方
+    ``group`` **之前**，因此后续官方步骤照常工作：
+
+    - ``group_identifier`` 先于 ``group_as`` 运行，会把右值的裸 ``T.Name`` 包成
+      ``Identifier``（这正是官方树里别名总是嵌套 ``Identifier`` 的原因）；
+    - 轮到 ``group_as`` 时左值已是 ``Identifier``（``is_keyword`` 为 False），
+      ``valid_prev`` 自然通过；``post`` 返回 ``(pidx, nidx)`` 且 ``extend=True``，
+      于是**扩展**左值那个 ``Identifier``，得到与官方完全同形的
+      ``Identifier[level, ws, as, ws, Identifier[depth]]``。
+
+    只在「左值是关键字且不是 ``NULL``」这一种官方明确拒绝的形状上动手，其余形状
+    官方自己能处理，不抢跑。
+    """
+
+    def match(token):
+        return token.is_keyword and token.normalized == "AS"
+
+    def valid_prev(token):
+        return (
+            token is not None
+            and token.is_keyword
+            and token.normalized not in _WRAP_ALIAS_LHS_EXCLUDE
+        )
+
+    def valid_next(token):
+        # 右值是括号的（``with x as (...)``）不碰；那种形状左值是 Name，本来也进不来
+        return token is not None and not token.match(T.Punctuation, "(")
+
+    def post(tlist_, pidx, tidx, nidx):
+        # 只包左值：别名整体仍由官方 group_as 成组
+        return pidx, pidx
+
+    official._group(  # noqa: SLF001 官方遍历原语，配合本项目判定回调使用
+        tlist, sql.Identifier, match, valid_prev, valid_next, post
     )
 
 
@@ -262,6 +325,7 @@ def _walk(tlist):
 def group(stmt):
     """官方分组 + 本项目补偿。调用方用它替换 ``grouping.group``。"""
     _group_interval_literals(stmt)  # 必须在官方分组之前
+    _wrap_keyword_alias_lhs(stmt)  # 必须在官方分组之前
     stmt = official.group(stmt)
     _walk(stmt)
     _unabsorb_trailing_comments(stmt)
