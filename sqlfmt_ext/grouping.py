@@ -352,6 +352,9 @@ def _unabsorb_trailing_comments(tlist):
     start = len(tlist.tokens)
     while start > 0 and isinstance(tlist.tokens[start - 1], sql.Comment):
         start -= 1
+        # 前导空白目前只吃一个：改成整段（while）能修好 `window/sqltest6_s03`
+        # （项 `b` 测成 `'b'` 而不是 `'b '`，max_as_offset 回到 9），但会踩
+        # `cte/sqltest2_s02`——见 PLAN §9.3「S6b」里待定的形状判据。
         if start > 0 and tlist.tokens[start - 1].is_whitespace:
             start -= 1
     # 全是注释的组保持原样，否则等于把整组搬走

@@ -630,6 +630,15 @@ fork 明确会正常建列表）被一起跳掉、内层列表被摊平。fork �
 >    —— 此时 `plist` 可能就是该项本身，空白被塞进项内，而注释随后又被搬走。
 > 建议先给 `_unabsorb_trailing_comments` 加「尾部空白先跳过再找注释尾巴」的判定试一次，
 > 跑 `_tmp_align_probe.py @该用例` 看 `text=` 是否变回 `'b'`，再跑两套件。
+>
+> **第十一轮补录（实验结论，已回滚）**：真凶确认是 `_unabsorb_trailing_comments` 里
+> 「吃掉注释前导空白」的 **`if` 只吃一个 token** —— 分组阶段空白还是**逐字符** token（U11），
+> 输入里那 7 个空格只会被吃掉 1 个，剩下 6 个留在项里。把它改成 `while`（整段吃）后：
+> `window/sqltest6_s03` **立刻 XPASS**（项 `b` 测回 `'b'`、`max_as_offset` 回到 9），
+> 但 **`cte/sqltest2_s02` 变红**（它需要那段空白留在组里）。所以只差一个**形状判据**。
+> 下次开工第一步：`python _tmp_align_probe.py --fork/--new "@tests/fixtures/cases/cte/sqltest2_s02.sql"`
+> 对比两侧组尾形状（探针的 `--fork` 模式已在本轮补上），定好「什么时候整段吃、什么时候只吃一个」再改。
+> 现网代码保持 `if`（两套件 `28/3` + `170/6` 绿）。
 
 *S6b —— 列表末尾列（`case/sqltest4_s01`、`nested/sqltest3_s01`、`window/sqltest6_s03`）*
 - `case/sqltest4_s01`：末项 `rn       ,` 我们**多 2 格**，且 `t.*` 没被断到下一行
