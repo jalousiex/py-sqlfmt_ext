@@ -700,12 +700,16 @@ class LayoutPass(AlignMixin):
         elif hasattr(plist, "M_OPEN"):
             nnext_, _ = plist.token_next_by(m=plist.M_OPEN)
             opener = plist.tokens[nnext_] if nnext_ is not None else None
+            # 紧邻的前一个非空白兄弟本身就是注释 → 也是「注释串延续」的一种形态：
+            # `_unabsorb_trailing_comments` 把注释连同前导空白搬回本层后，注释串的
+            # 后续成员是**同层并列**的注释，而不是「某个组以注释结尾」。
+            _, prev_any = plist.token_prev(pidx, skip_ws=True, skip_cm=False)
             if (
                 prev_ is not None
                 and prev_ is not opener
                 and isinstance(prev_, sql.TokenList)
                 and self._ends_with_comment(prev_)
-            ):
+            ) or isinstance(prev_any, sql.Comment):
                 # 注释前还有内容（不是紧跟括号/over 的开口）→ 与**前一段内容的层级**对齐，
                 # 而不是括号内容的起始列。
                 # 例：`with c as ( … where 1 = 1 --a\n--b\n       --c )` 里，`--c` 是独立的

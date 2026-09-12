@@ -25,7 +25,6 @@ KNOWN_DIFF = {
     # --- S6：列对齐（含注释列 / 末尾逗号列 / from 缩进） ---
     "case/sqltest4_s01": _ALIGN,
     "nested/sqltest3_s01": _ALIGN,
-    "window/sqltest6_s03": _ALIGN,
 }
 
 # 有意偏离：新架构**不打算**复现旧基线的用例（口径重定，不是「还没做」）。
