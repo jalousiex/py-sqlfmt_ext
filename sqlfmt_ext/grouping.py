@@ -420,7 +420,16 @@ def _create_guard(tlist):
         return None
 
     for idx, token in enumerate(tlist.tokens):
-        if token.match(T.DML, "SELECT"):
+        # 边界是「with / select / values 里最先出现的那个」——fork 的注释原文就是
+        # 「create/alter/insert 后，且在 with/select/values 前的 1-2 个括号」。
+        # 只认 SELECT 会把 `create view … as -- with c as (select …) … select * from c`
+        # 这种 CTE 也一起跳掉：CTE 体括号在 `with` 之后，fork 是会正常建列表的
+        # （漏掉就表现为 CTE 里的 select 列表不展开，`cte/sqltest2_s02`）。
+        # 注意 `WITH` 是 `T.Keyword.CTE`，用 `Token.match(T.Keyword, …)` 匹配不上，
+        # 必须用 `ttype in T.Keyword`。
+        if token.match(T.DML, "SELECT") or (
+            token.ttype in T.Keyword and token.value.upper() in ("WITH", "VALUES")
+        ):
             return idx
     return False
 

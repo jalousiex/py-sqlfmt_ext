@@ -396,6 +396,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | 2026-09-12 | **U11 落地，对拍 `5/26` → `14/17`**：①新增 `sqlfmt_ext/whitespace.py::merge_whitespace_runs`；②新增 `sqlfmt_ext/filters/whitespace.py::StripWhitespaceFilter`，在官方 `_stripws()` 之前合并空白段，并换装进 stack（`stack._swap_whitespace_filter`）；③`LayoutPass.process` 入口保留幂等兜底调用。修掉两类问题：`_set_adjacent_ws` 改写错 token（列宽 +1）与官方 `_stripws_identifierlist` 只删 1 个空 token（逗号前残留 1 空格）。8 个用例转正后**重新校准 §4 规则→用例映射**：L3/L6/L7 整条消失，L1 12→8、L2 7→6、A1 6→1。 |
 | 2026-09-12 | 工具整理：`_tmp_cmp.py` 的两侧选项与主套件口径对齐（去掉多传的 `comma_align`、按 `;` 拆分后以空行拼接、支持 `@相对路径` 直接喂 fixture）；`_tmp_*.py` 加入 `.gitignore`（迁移期临时脚本，S7 统一删除）。 |
 | 2026-09-12 | **S5a 落地，对拍 `21/10` → `22/9`**：`policy.MULTIWORD_REGEX` 在 `LATERAL VIEW <白名单 UDTF>` 之后补一条兜底 `(LATERAL\s+VIEW)\b` —— UDTF 不在白名单时（如 `EXPLODE_JSON_ARRAY_JSON`）`lateral`/`view` 会各自成词，`split_words` 的 `LATERAL\s+VIEW` 对两个单词 token 都匹配不上（`match` 是拿整条正则去 search 单个 token 的 normalized），多个 `lateral view` 全被挤在 `from` 行（且旧 fork 靠输入换行侥幸通过，属已知不收敛用例）。→ 转正 `dml/sqltest1_s06`。 |
+| 2026-09-12 | **S5b 收口（U14 + `_create_guard` 边界）**：`cte/sqltest2_s02` 从 18/18 行差异降到 **1/22 行**（且全部为空白宽度）。第二个根因是 `_create_guard` 只拿 `SELECT` 当边界，把 `WITH` 之后本该正常建列表的 CTE 体括号一起跳掉了；改成 fork 原文口径「with/select/values 中最先出现的那个」（`WITH` 是 `T.Keyword.CTE`，要用 `ttype in T.Keyword` 判）。残差 1 行 = 注释串缩进，取证表明旧 fork 那处是**输入换行+空格驱动**（单行输入下它压根不拆注释串），需口径决策，见 §9.3「S5b」。两套件无回归：`23/8`、`170/6`。 |
 | 2026-09-12 | **S5b 分组侧落地（U14）**：新增 `grouping._attach_over_to_functions` —— 官方 `group_functions` 用「下标相邻」判定是否把 `OVER` 并进 `Function`，`)` 与 `over` 之间夹注释时判定失败；补偿把它搬回 `Function` 并还原 fork 的列表项形状（显式 `as rn` 与隐式 `over(…) rn` 两种写法都覆盖）。孤立复现已与期望**逐字节相同**；整条 `cte/sqltest2_s02` 的残差是 **CTE / `create view` 上下文**里同一个列表不展开，属另一根因（入口已写在 §9.3）。两套件无回归：`23/8`、`170/6`。 |
 | 2026-09-12 | **S5c 定性（用户拍板「按 (i) 做」）**：`case` 与首个 `when` 取**同行**口径，`case/sqltest4_s03` 登记为**有意偏离**（`test_parity.DEVIATIONS`：理由 + 对 canonical 的定向变换，**断言**而非 xfail，另加「变换失效即报错」守卫），对拍 `22/9` → **`23/8` + 1 条有意偏离**。**没有改任何 fixture、没动主套件**（s03 的 canonical 同时钉住旧 fork 的输出回归测试，改了主套件立刻红）。§4 新增「对旧 fork 的有意偏离清单」，S7 交付时按此清单向用户交代。 |
 | 2026-09-12 | 按 `improve-agent` 的「历史失败模式 → 指令修订」思路修正 `AGENTS.md`：①修掉事实错误（用例目录 `pytests/` → 实际的 `tests/`，并补上两套件的跑法与门槛）；②补「架构」为迁移期四段流水线（`DialectLexer`→官方分组+补偿→`StripWhitespaceFilter`→`LayoutPass`），旧 fork 标注为仅作 oracle；③新增「硬约束 C1–C5」与两条元规则（**列对齐错乱先怀疑分组**；**结论必须写成最小重现**）；④补诊断工具清单与三个坑（`FilterStack.run` 返回生成器、两实现须分进程、不能比非空白 token 序列）。 |
@@ -543,17 +544,28 @@ db.tb (user_id, name, age) values (1, 'a', 2);`）：官方树是
 
 输出与期望第 4–8 行**逐字节相同**；两种别名形态的树也与 `_tmp_forkidx.py` 完全同形。
 
-**残差（下一位接手从这里开始）**：整条 fixture 仍差，因为**同样的列表在
-`create view … with … as ( select … )` 上下文里不展开**（本实现 `select EMPLID as EmpCode,
-ROW_NUMBER() --` 挤在一行、`as` 列也没对齐到同一基准），而单独跑就是对的。
-也就是说这与 U14 无关，是**上下文/语句类型相关**的布局路径问题，建议的入口：
-- 该语句 `get_type()` 是 `CREATE`，`_process_parenthesis` 里有
-  `in_xdl_list = self._curr_stmt.get_type() in ("CREATE","INSERT","ALTER")` 分支
-  （`passes/layout.py:247` 起），CTE 体括号是否被误当成「字段定义列表」；
-- 或者 `_process_identifierlist` / `_AlignMixin._align_identifierlist` 在 CREATE 语境下
-  走了不同的偏移/基准。
-另外该 fixture 还有两处**既有**（与本次改动无关）的差异：`create view … as --` 后多一个空行、
-第三个 `--and t1.Rowkey=1` 的缩进。
+**第二个根因（同段内一并修掉）：`_create_guard` 的边界取错。**
+整条 fixture 仍差，但把同一条 select 单独跑是对的 → 说明与 U14 无关，是**语句类型 `CREATE`**
+引起的差异。二分结论：`create view x as (select …)` **在 fork 里也不展开**（我们复刻正确），
+`with w as (select …)` 就正常 → 真凶是 `grouping._create_guard` 只把 **`SELECT`** 当边界：
+`create view … as -- with c as (select …) … select * from c` 里 CTE 体括号（在 `with` 之后、
+fork 明确会正常建列表）被一起跳掉、内层列表被摊平。fork 的原文口径是
+「create/alter/insert 后，且在 **with/select/values** 前的 1-2 个括号」，所以边界应该是
+**三者中最先出现的那个**。注意 `WITH` 的 ttype 是 `T.Keyword.CTE`，`Token.match(T.Keyword, …)`
+匹配不上，必须用 `ttype in T.Keyword`。
+
+**验证**：修完守卫边界后，`cte/sqltest2_s02` 从「18/18 行差异」降到
+**「1/22 行差异，且全部是空白宽度」**；关掉守卫做对照会破 2 个 DDL 用例，说明守卫本身必须留。
+
+**残差 = 1 行，需口径决策（与 S5c 同类）**：期望第三个注释 `       --and t1.Rowkey=1` 缩进 7，
+本实现是列 0。取证表明旧 fork 在这条上是**输入换行 + 输入空格驱动**的：
+- 单行输入 `… where 1 = 1 --a --b --c` → fork **根本不拆注释串**（整串留在一行）；
+- 输入 `--a\n--b\n       --c` → fork 输出 ` --c`（7 个空格被压成 1 个），与「结构性缩进」对不上。
+
+也就是说这一行的期望值无法用结构性规则复现，属 C4 类不可移植行为。
+可选项与 S5c 相同：①按本实现口径（注释串统一列 0）把该 fixture 登记为**有意偏离**；
+②或定一条结构性规则（例如「注释串中紧跟收尾括号的最后一条按当前缩进」）再核对 fork 反例。
+**动手前先与用户确认。**
 
 **S5c 已收（2026-09-12，用户拍板口径）→ 对拍 `22/9` 变 `23/8` + 1 条有意偏离**：
 `case` 与首个 `when` **同行**（`case when b in ('X','Y') then …`），把 `case/sqltest4_s03` 登记为
