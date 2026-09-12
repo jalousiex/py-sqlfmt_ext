@@ -53,6 +53,8 @@ from sqlparse import tokens as T
 from sqlparse.engine import grouping as official
 from sqlparse.utils import imt
 
+from . import policy
+
 # 与官方 ``group_identifier_list`` 的判定口径基本一致（含 ``T.Comment``），
 # 仅补一个 ``sql.Parenthesis``：官方 ``sqlcls`` 不含它，于是 ``values (…), (…)``
 # 这种「括号作列表项」的多行值列表在官方分组下永远成不了 ``IdentifierList``
@@ -500,6 +502,66 @@ def _is_alias(token):
     return token.ttype in T.Name or token.ttype in T.String
 
 
+def _is_clause_keyword(token):
+    """换行锚点词（``from`` / ``where`` / ``group by`` …）—— 它们不可能是列表项。"""
+    if token.ttype is None or token.ttype not in T.Keyword:
+        return False
+    return bool(
+        token.match(T.Keyword, policy.split_words, regex=True)
+        or token.match(T.Keyword, policy.join_words, regex=True)
+        or token.match(T.Keyword, policy.by_words, regex=True)
+    )
+
+
+def _trim_clause_tail(tlist):
+    """把列表尾部误吞的「尾逗号 + 子句关键字」退回父层（U15）。
+
+    官方 ``group_identifier_list`` 的 ``valid_next`` 认 ``T.Keyword``：一条**尾逗号**
+    后面紧跟的子句关键字会被当成下一个列表项吞进列表。例：
+
+        select distinct (1) as wc, F_USER_CODE as POSTUSERCODE ,
+          from DWS.xxx T1;
+
+    官方列表 = ``'(1) as wc, F_USER_CODE as POSTUSERCODE , from'`` —— ``from`` 成了
+    列表项：列对齐于是按「``from`` + 表名」算基准，表现为
+    ``F_USER_CODE as POSTUSERCODE,`` 少一格、``from`` 行被补出一大段空白
+    （``window/sqltest6_s01``、``nested/sqltest3_s02``）。旧 fork 的列表在这里
+    止于最后一个真实项，尾逗号与 ``from`` 留在外层。
+
+    只处理「尾逗号 + 子句关键字」这一种形状（关键字前必须是逗号），其余不动。
+    """
+    for sgroup in list(tlist.get_sublists()):
+        _trim_clause_tail(sgroup)
+
+    if not isinstance(tlist, sql.IdentifierList):
+        return tlist
+    parent = tlist.parent
+    if parent is None:
+        return tlist
+
+    end = len(tlist.tokens)
+    while end > 0 and _is_clause_keyword(tlist.tokens[end - 1]):
+        scan = end - 1
+        while scan > 0 and tlist.tokens[scan - 1].is_whitespace:
+            scan -= 1
+        if scan == 0 or not tlist.tokens[scan - 1].match(T.Punctuation, ","):
+            break
+        end = scan - 1  # 连同那个逗号一起退
+        while end > 0 and tlist.tokens[end - 1].is_whitespace:
+            end -= 1
+    if end == 0 or end == len(tlist.tokens):
+        return tlist
+
+    moved = tlist.tokens[end:]
+    del tlist.tokens[end:]
+    pos = parent.token_index(tlist)
+    for token in moved:
+        token.parent = parent
+    parent.tokens[pos + 1:pos + 1] = moved
+    _refresh_values(tlist)
+    return tlist
+
+
 def _last_function_of(token):
     """沿「最后一个非空白子 token」下钻，返回其中的 ``Function``；找不到返回 ``None``。"""
     while isinstance(token, sql.TokenList):
@@ -637,6 +699,9 @@ def group(stmt):
     _pre_wrap_object_name(stmt)  # 必须在官方分组之前
     stmt = official.group(stmt)
     _walk(stmt)
+    # 尾逗号吞掉子句关键字（U15）：必须在 ``_walk`` 之后 —— ``_group_level`` 会按
+    # 「逗号 + 真实项」再归并一次，先退出去会被它重新吞回来。
+    _trim_clause_tail(stmt)
     _unabsorb_trailing_comments(stmt)
     _absorb_leading_comments(stmt)
     _attach_over_to_functions(stmt)

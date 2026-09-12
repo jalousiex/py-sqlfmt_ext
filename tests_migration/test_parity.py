@@ -30,8 +30,6 @@ KNOWN_DIFF = {
     "ddl/sqltest0_s01": _ALIGN,
     "ddl/sqltest0_s02": _ALIGN,
     "nested/sqltest3_s01": _ALIGN,
-    "nested/sqltest3_s02": _ALIGN,
-    "window/sqltest6_s01": _ALIGN,
     "window/sqltest6_s03": _ALIGN,
 }
 
