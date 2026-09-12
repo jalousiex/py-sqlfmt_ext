@@ -10,9 +10,8 @@
 """
 
 from sqlparse import engine, filters, formatter
-from sqlparse.engine import grouping
 
-from sqlfmt_ext import policy  # noqa: F401  确保分词补丁 ttype 已派生
+from sqlfmt_ext import grouping, policy  # noqa: F401  确保分词补丁 ttype 已派生
 from sqlfmt_ext.filters.operators import SpacesAroundOperatorsFilter
 from sqlfmt_ext.lexer import build_lexer
 from sqlfmt_ext.options import validate_options
@@ -44,7 +43,7 @@ class FilterStack(engine.FilterStack):
 
         for stmt in stream:
             if self._grouping:
-                stmt = grouping.group(stmt)
+                stmt = grouping.group(stmt)  # 本项目补偿层：官方分组 + 注释容忍归并
             for filter_ in self.stmtprocess:
                 filter_.process(stmt)
             for filter_ in self.postprocess:

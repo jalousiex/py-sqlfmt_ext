@@ -31,7 +31,9 @@ class AlignMixin:
         alias = as_tk = None
         if token.is_group and not hasattr(token, "M_OPEN"):
             nidx, _ = token.token_next(idx=-1, skip_cm=True)
-            _, alias = token.token_next_by(idx=nidx, i=sql.Identifier)
+            # 官方 token_next 在整项只有注释/空白时返回 None，此处需跳过而非往下传
+            if nidx is not None:
+                _, alias = token.token_next_by(idx=nidx, i=sql.Identifier)
             _, as_tk = token.token_next_by(m=(T.Keyword, "AS"))
             if as_tk and alias is None:
                 _, next_tk = token.token_next(token.token_index(as_tk), skip_cm=True)

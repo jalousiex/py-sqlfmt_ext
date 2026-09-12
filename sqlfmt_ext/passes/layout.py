@@ -411,7 +411,8 @@ class LayoutPass(AlignMixin):
             self._process_default(tlist, stmts=False)
             # 对齐逻辑：仅 align_list 开启时执行
             if self.align_list:
-                self._align_identifierlist(list(tlist.get_identifiers()))
+                # 官方 get_identifiers 会把注释也算作列表项，对齐时需剔除
+                self._align_identifierlist([tk for tk in tlist.get_identifiers() if not isinstance(tk, sql.Comment)])
 
     def _fold_case_newlines(self, tokens):
         """折叠 when/then 内容中非注释强制的换行为单空格，注释前的换行是语法所需，保留。
