@@ -84,6 +84,41 @@ class AlignedIndentFilter:
             if tk.is_whitespace and "\n" in tk.value:
                 tk.value = " "
 
+    def _normalize_newlines(self, stmt):
+        """折叠原始输入里无语义的换行，避免它们残留到格式化结果中。
+
+        处理两类情况：
+        1. lexer 合并的多词关键字/操作符 token 内部的换行（如 not null、not like）；
+        2. 关键字之后紧跟的空白换行（如 exists 后的子查询、DDL 列定义里
+           comment 与注释值之间、default 与默认值之间）。
+
+        CASE 之后的换行决定 WHEN 是否另起一行，因此保持原样。
+        """
+        # commit 属 DML 关键字，_split_statements 会刻意让它另起一行（见 ddl/sqltest0_s04）
+        keep_newline = {"ON COMMIT"}
+        prev_ = None
+        for tk in stmt.flatten():
+            if tk.is_whitespace:
+                if (
+                    self.n in tk.value
+                    and prev_ is not None
+                    and prev_.is_keyword
+                    and not prev_.match(T.Keyword, "CASE")
+                ):
+                    # 同时修正 ttype/is_newline，否则下游仍会把该 token 当作换行
+                    tk.value = " "
+                    tk.ttype = T.Whitespace
+                    tk.is_newline = False
+                continue
+            if (
+                self.n in tk.value
+                and (tk.is_keyword or tk.ttype in T.Operator or tk.ttype is T.Name.Builtin)
+                and " ".join(tk.normalized.split()) not in keep_newline
+            ):
+                tk.value = " ".join(tk.value.split())
+                tk.normalized = tk.value.upper()
+            prev_ = tk
+
     def _collapse_newline(self, token, prev_token=None):
         """折叠非注释边界的空白换行，返回是否已处理。"""
         if not token.is_whitespace or self.n not in token.value:
@@ -756,26 +791,26 @@ class AlignedIndentFilter:
         return tidx, token
 
     def _should_inline_after_keyword(self, tlist, tidx, token):
-        """判断关键字后是否应折叠为同行（关键字 + 右侧表达式）。"""
-        if token.match(T.Keyword, self.join_words, regex=True):
-            return True
-        if token.match(T.Keyword, self.by_words, regex=True):
-            return True
+        """判断关键字后是否应折叠为同行（关键字 + 右侧表达式）。
 
-        if token.match(T.Keyword, ["FROM", "WHERE", "HAVING"]):
-            return True
+        能被 _next_token 命中的都是行首 split_words 关键字。除集合运算符
+        UNION/EXCEPT（其后是新的查询体，由 _split_statements 另起一行）之外，
+        其余关键字的右侧表达式都应紧随其后，避免原始输入里的随意换行被保留，
+        例如 where 子句里 and 与其后的条件应折叠到同一行。
+        """
+        # UNION/EXCEPT 后接新的查询体，不能与关键字同行
+        if token.match(T.Keyword, [r"\bUNION\b", r"\bEXCEPT\b"], regex=True):
+            return False
 
         if token.match(T.Keyword, "ON"):
             _, next_ = tlist.token_next(tidx, skip_cm=True)
             if next_ and next_.match(T.Keyword, "COMMIT"):
                 return False
-            return True
 
-        return False
+        return True
 
     def _split_kwds(self, tlist):
         # 遍历关键字, _next_token查找匹配T.Keyword,self.split_words的关键字token
-
         tidx, token = self._next_token(tlist)
         token_notkey_ = None
         first_keyword = None
@@ -808,6 +843,7 @@ class AlignedIndentFilter:
                 # 折叠 token 内部已有的换行（如 lexer 将 "left\n   join" 合并为单 token）
                 if self.n in token.value:
                     token.value = " ".join(token.value.split())
+                    token.normalized = token.value.upper()
                 token_indent = token.value.split()[0]
             elif token is token_notkey_:
                 token_indent = 1
@@ -919,5 +955,6 @@ class AlignedIndentFilter:
     def process(self, stmt):
         # 处理入口
         self._curr_stmt = stmt
+        self._normalize_newlines(stmt)
         self._process(stmt)
         return stmt

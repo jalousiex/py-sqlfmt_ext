@@ -54,6 +54,55 @@ from tests.sqlfmt_test_helpers import format_with_entry_defaults
        created_at   timestamp                          comment 'created'
 )""",
         ),
+        (
+            """select a
+from t
+where 1 = 1
+and
+a = 1""",
+            """select a
+  from t
+ where 1 = 1
+   and a = 1""",
+        ),
+        (
+            "select a from t where a between\n1 and 2",
+            "select a\n  from t\n where a between 1 and 2",
+        ),
+        (
+            "select a from t union all\nselect b from u",
+            """select a
+  from t
+ union all
+select b
+  from u""",
+        ),
+        (
+            "create table t (id int comment\n'x', name varchar(10) comment 'y')",
+            """create table t (
+       id   int         comment 'x',
+       name varchar(10) comment 'y'
+)""",
+        ),
+        (
+            "create table t (id int not\nnull, name varchar(10))",
+            """create table t (
+       id   int         not null,
+       name varchar(10)
+)""",
+        ),
+        (
+            "select\n*\nfrom\nt",
+            "select * from t",
+        ),
+        (
+            "select a from t where exists\n(select 1)",
+            "select a\n  from t\n where exists (select 1)",
+        ),
+        (
+            "select a from t where b not\nlike 'x%' and c not\nin (1, 2)",
+            "select a\n  from t\n where b not like 'x%'\n   and c not in (1, 2)",
+        ),
     ],
     ids=(
         "keyword-alias",
@@ -64,6 +113,14 @@ from tests.sqlfmt_test_helpers import format_with_entry_defaults
         "case-comment-boundary",
         "keyword-comment-boundary",
         "ddl-column-layout",
+        "and-newline-fold",
+        "between-newline-fold",
+        "union-all-newline-fold",
+        "ddl-column-comment-newline-fold",
+        "ddl-column-multiword-keyword-newline-fold",
+        "select-star-multiline-fold",
+        "exists-newline-fold",
+        "multiword-operator-newline-fold",
     ),
 )
 def test_layout_variants(source, expected):
