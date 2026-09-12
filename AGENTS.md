@@ -2,6 +2,10 @@
 
 基于 `sqlparse` 二次定制的 SQL 格式化工具。详细说明见 [README.md](README.md)。
 
+> **正在进行重构**：目标形态是「官方 sqlparse 之上的小侵入外挂」。
+> 计划、步骤拆分与验收标准见 [PLAN.md](PLAN.md)。
+> 迁移期新实现位于 `sqlfmt_ext/`，对拍进度条跑 `pytest tests_migration/ -q`。
+
 ## 架构
 
 ```

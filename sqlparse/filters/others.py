@@ -91,6 +91,10 @@ class StripWhitespaceFilter:
 
     @staticmethod
     def _stripws_default(tlist):
+        # 注意：此处刻意「保留换行」（与官方折叠换行不同），AlignedIndentFilter 依赖
+        # 输入换行来决定若干布局（CASE 首个 when 是否独占一行、注释换行、ON COMMIT、
+        # lateral view 等）。若改为官方语义，这些布局会随之改变。
+        # 路线 A（让输出只取决于 token 流）需要先把这些布局改成不依赖输入换行。
         last_was_ws = False
         is_first_char = True
         for token in tlist.tokens:
@@ -103,17 +107,17 @@ class StripWhitespaceFilter:
             is_first_char = False
 
     def _stripws_identifierlist(self, tlist):
-        # Removes newlines before commas, see issue140
-        last_nl = None
-        for token in list(tlist.tokens):
-            if last_nl and token.ttype is T.Punctuation and token.value == ",":
-                tlist.tokens.remove(last_nl)
-            last_nl = token if token.is_whitespace else None
-
-            # next_ = tlist.token_next(token, skip_ws=False)
-            # if (next_ and not next_.is_whitespace and
-            #             token.ttype is T.Punctuation and token.value == ','):
-            #     tlist.insert_after(token, sql.Token(T.Whitespace, ' '))
+        # Removes whitespace runs before commas, see issue140
+        # 官方只删掉紧邻逗号的最后一个空白 token；lexer 会把 "\n   " 拆成
+        # Newline + Whitespace 两个 token，故这里删除整段空白，避免残留空格。
+        idx = 0
+        while idx < len(tlist.tokens):
+            token = tlist.tokens[idx]
+            if token.ttype is T.Punctuation and token.value == ",":
+                while idx > 0 and tlist.tokens[idx - 1].is_whitespace:
+                    del tlist.tokens[idx - 1]
+                    idx -= 1
+            idx += 1
         return self._stripws_default(tlist)
 
     def _stripws_parenthesis(self, tlist):

@@ -1,0 +1,11 @@
+[project]
+name = "py-sqlfmt"
+version = "0.1.0"
+description = "基于官方 sqlparse 的 SQL 格式化外挂层（Doris/SelectDB 优先）"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["sqlparse>=0.6,<0.7"]
+
+[tool.pytest.ini_options]
+# 默认只跑主测试套件；迁移期的对拍测试用 `pytest tests_migration/` 显式运行
+testpaths = ["tests"]
