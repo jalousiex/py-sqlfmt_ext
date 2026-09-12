@@ -20,6 +20,7 @@ from sqlparse import tokens as T
 from sqlparse.utils import imt, indent, offset
 
 from .. import policy
+from ..whitespace import merge_whitespace_runs
 from .align import AlignMixin
 
 
@@ -875,6 +876,8 @@ class LayoutPass(AlignMixin):
     def process(self, stmt):
         # 处理入口
         self._curr_stmt = stmt
+        # 兜底（正常路径已由 StripWhitespaceFilter 归一）：恢复「一段空白 = 一个 token」
+        merge_whitespace_runs(stmt)
         self._normalize_newlines(stmt)
         self._process(stmt)
         return stmt

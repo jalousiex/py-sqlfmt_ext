@@ -29,20 +29,23 @@ class DialectLexer(Lexer):
         # 词表：追加查询（命中即返回），不覆盖官方已有键
         self.add_keywords(policy.KEYWORDS_DORIS)
         # 多词关键字：前插到官方多词关键字区块，避免被通用单词规则抢先
-        self._insert_multiword(policy.compiled(policy.MULTIWORD_REGEX))
+        self._insert_rules(policy.compiled(policy.MULTIWORD_REGEX), policy.ANCHOR_PATTERNS, len(self._SQL_REGEX) - 8)
+        # 优先级补丁：必须早于官方「函数名」正则，否则 over( 会被判成 Name
+        self._insert_rules(policy.compiled(policy.PRECEDENCE_REGEX), policy.PRECEDENCE_ANCHORS, 0)
 
-    def _insert_multiword(self, entries):
+    def _insert_rules(self, entries, anchors, fallback):
         rules = self._SQL_REGEX
-        index = self._multiword_anchor(rules)
+        index = self._anchor_index(rules, anchors)
+        index = fallback if index is None else index
         rules[index:index] = entries
 
     @staticmethod
-    def _multiword_anchor(rules):
-        wanted = set(policy.ANCHOR_PATTERNS)
+    def _anchor_index(rules, anchors):
+        wanted = set(anchors)
         for i, (matcher, _) in enumerate(rules):
             if policy.pattern_of(matcher) in wanted:
                 return i
-        return len(rules) - 8
+        return None
 
 
 def build_lexer(dialect="doris"):

@@ -14,7 +14,6 @@ from tests.fixtures.sql_cases import SQL_CASES, normalize_sql
 _ALIGN = "列对齐（AlignPass）未实现"
 _COMMENT = "注释强制换行规则（LayoutPass）未实现"
 _FIELD_LIST = "括号内字段列表未展开（LayoutPass）"
-_STMT_SPLIT = "语句/CTE 换行规则（LayoutPass）未实现"
 _CASE_FIRST_WHEN = "CASE 首个 WHEN 布局待定结构性规则（LayoutPass L5）"
 
 # 未复现用例 → 原因（修好一个删一个）
@@ -25,12 +24,9 @@ KNOWN_DIFF = {
     # 属已知不收敛用例；官方 strip 之下没有该换行可用，必须先定下结构性规则
     # （L5）或重定基线，暂列 KNOWN_DIFF。
     "case/sqltest4_s03": _CASE_FIRST_WHEN,
-    "comma/sqltest7_s01": _COMMENT,
     "comma/sqltest7_s02": _COMMENT,
-    "cte/sqltest2_s01": _COMMENT,
     "cte/sqltest2_s02": _COMMENT,
     "dml/sqltest1_s01": _COMMENT,
-    "dml/sqltest1_s05": _COMMENT,
     "nested/sqltest3_s01": _COMMENT,
     "nested/sqltest3_s02": _COMMENT,
     "window/sqltest6_s01": _COMMENT,
@@ -41,18 +37,11 @@ KNOWN_DIFF = {
     "ddl/sqltest0_s03": _FIELD_LIST,
     "ddl/sqltest0_s06": _FIELD_LIST,
     "dml/sqltest1_s02": _FIELD_LIST,
-    "dml/sqltest1_s03": _FIELD_LIST,
     "dml/sqltest1_s04": _FIELD_LIST,
     # --- LayoutPass：语句/CTE 换行 ---
-    "ddl/sqltest0_s05": _STMT_SPLIT,
     "dml/sqltest1_s06": "多个 LATERAL VIEW 未各自分行（LayoutPass）",
     # --- AlignPass：列对齐 ---
-    "aggregate/sqltest5_s01": _ALIGN,
-    "aggregate/sqltest5_s02": _ALIGN,
     "debug/sqldebug_s01": _ALIGN,
-    "dml/sqltest1_s07": _ALIGN,
-    "dml/sqltest1_s08": _ALIGN,
-    "window/sqltest6_s02": _ALIGN,
 }
 
 

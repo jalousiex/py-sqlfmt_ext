@@ -8,7 +8,9 @@
 官方 0.6.0 的分词表与本项目历史输出存在少数差异，逐条列在此处以保证输出稳定：
 
 * ``LATERAL VIEW <UDTF>`` 合并为单个 Keyword（多词关键字，避免被拆成两行）；
-* Doris/SelectDB 的模型定义关键字（官方没有，按 MySQL 兼容适配）。
+* Doris/SelectDB 的模型定义关键字（官方没有，按 MySQL 兼容适配）；
+* ``OVER (`` 判回 Keyword（官方词表里有 ``OVER``，但被更靠前的「函数名」正则
+  ``[A-ZÀ-Ü]\\w*(?=\\()`` 抢先判成 ``Name``，导致 ``sql.Over`` 永远分不出来）。
 
 每条都写成「追加/前置」，不改写官方已有条目。
 """
@@ -73,6 +75,17 @@ MULTIWORD_REGEX = (
     (r"(AUTO\s+)?PARTITION\s+BY\b", T.Keyword),
     (r"DISTRIBUTED\s+BY\b", T.Keyword),
 )
+
+# 需要早于官方「函数名」正则（``[A-ZÀ-Ü]\w*(?=\()`` → Name）生效的补丁。
+# 官方词表里本就有 ``'OVER': tokens.Keyword``，但 ``over(`` 会被函数名正则先截走，
+# 于是 ``sql.Over.M_OPEN`` 永远匹配不上，``over (...)`` 退化成普通 ``Function``，
+# 后续对齐取错偏移。这里把它判回 Keyword。
+PRECEDENCE_REGEX = (
+    (r"OVER\b(?=\s*\()", T.Keyword),
+)
+
+# 官方「函数名」正则之前的锚点
+PRECEDENCE_ANCHORS = (r"(?<=\.)[A-ZÀ-Ü]\w*",)
 
 # Doris/SelectDB 词表：官方没有，按 MySQL 兼容适配
 KEYWORDS_DORIS = {

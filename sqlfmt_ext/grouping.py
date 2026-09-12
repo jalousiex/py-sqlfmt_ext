@@ -1,25 +1,31 @@
-"""分组补偿层：在官方 ``grouping.group`` 之上补齐「注释打断列表」的缺口。
+"""分组补偿层：官方 ``grouping.group`` 前后各补一处缺口。
 
-问题
-----
-官方 ``group_identifier_list`` 用 ``imt(token, i=sqlcls, t=ttypes)`` 判定列表项，
-``ttypes`` 里虽然含 ``T.Comment``，但 ``group_comments`` 先跑，注释此时已经是
-``sql.Comment`` 分组（``ttype`` 为 ``None``），于是**注释会把列表打断**：
+本文件只**调用**官方 ``_group`` 这个遍历原语，不复制官方任何分组实现。
+官方分组在本项目口径下有三条缺口：
 
-    select a, /*m*/ b from t      # 官方分组下拿不到 IdentifierList
+1. **裸 ``interval N unit`` 不成组**（官方分组之前补）。
+   官方 ``group_typed_literal`` 的 ``M_CLOSE`` 是 ``T.String.Single``，只支持
+   ``interval '1 day'``；Doris/MySQL 更常见的是 ``interval 1 day``。不成组时
+   ``-`` 运算符失去右操作数，会连带把字段列表切碎（``comma/sqltest7_s01``）。
+   见 ``_group_interval_literals``。
 
-旧 fork 的做法是把 ``sql.Comment`` 加进 ``sqlcls``；本项目不改官方源码，改为在
-官方分组之后追加一层「容忍注释」的列表归并。
+2. **注释会打断逗号列表**（官方分组之后补）。
+   官方 ``group_identifier_list`` 用 ``imt(token, i=sqlcls, t=ttypes)`` 判定列表项，
+   ``ttypes`` 里虽然含 ``T.Comment``，但 ``group_comments`` 先跑，注释此时已经是
+   ``sql.Comment`` 分组（``ttype`` 为 ``None``），于是判定失败：
 
-做法
-----
-复用官方 ``_group`` 的遍历（不复制其实现），只换掉两个判定回调：
+       select a, /*m*/ b from t      # 官方分组下拿不到 IdentifierList
 
-* ``valid_prev``：把 ``Comment`` 也当作合法的前项；
-* ``valid_next``：遇到 ``Comment`` 时向后看，只有其后仍有真实列表项才允许跨过它
-  成组，并在 ``post`` 里把成组区间延伸到那个真实列表项。
+   旧 fork 的做法是把 ``sql.Comment`` 加进 ``sqlcls``；本项目不改官方源码，改为
+   在官方分组**之后**追加一层「容忍注释」的列表归并：只换掉官方 ``_group`` 的两个
+   判定回调——``valid_prev`` 把 ``Comment`` 也当作合法前项，``valid_next`` 遇到
+   ``Comment`` 时向后看、只有其后仍有真实列表项才允许跨过它成组，并在 ``post`` 里
+   把成组区间延伸到那个真实列表项。成组区间连续，区间内的注释因此会像旧 fork 一样
+   成为 ``IdentifierList`` 的子项。
 
-成组区间是连续的，区间内的注释因此会像旧 fork 一样成为 ``IdentifierList`` 的子项。
+3. **官方 ``align_comments`` 会把注释并入前一个 ``TokenList``**（官方分组之后补）。
+   注释因此成了那个组的末尾 token，后续 token（典型是同级闭括号）在 ``LayoutPass``
+   里对不齐。旧 fork 的分组从不并入。见 ``_unabsorb_trailing_comments``。
 """
 
 from sqlparse import sql
@@ -52,6 +58,60 @@ def _is_comment(token):
 def _real_item(token):
     """官方口径的「合法列表项」判定（不把 Comment 分组算进去）。"""
     return token is not None and imt(token, i=_SQLCLS, m=_M_ROLE, t=_TTYPES)
+
+
+def _refresh_values(token):
+    """自底向上刷新 ``TokenList.value``。
+
+    官方 ``TokenList`` 的 ``value`` 是构造时缓存的字符串（``__init__`` 里
+    ``''.join(...)`` 一次），就地增删子 token 不会自动更新。本模块会搬动 token，
+    因此必须自己刷新，否则 ``LayoutPass`` 里 ``prev_.value.rstrip().endswith(n)``
+    这类基于缓存值的判定会按旧内容工作（曾把注释顶到下一行）。
+    """
+    while token is not None:
+        if isinstance(token, sql.TokenList):
+            token.value = "".join(child.value for child in token.tokens)
+        token = token.parent
+
+
+def _group_interval_literals(tlist):
+    """把裸 ``interval <数值> <单位>`` 预成组为 ``TypedLiteral``。
+
+    必须在官方 ``group`` **之前**跑：官方 ``group_typed_literal`` 的 ``M_CLOSE``
+    只认 ``T.String.Single``，裸数值不会被收进 ``TypedLiteral``，随后
+    ``group_operator`` 的 ``-`` 失去右操作数，最终把字段列表切成两段。
+    """
+
+    def match(token):
+        # ``Name.Builtin`` 不是关键字，``normalized`` 保持原样小写，
+        # 因此不能用 ``token.match(ttype, "INTERVAL")`` 判定，只能比 value。
+        return token.ttype is T.Name.Builtin and token.value.upper() == "INTERVAL"
+
+    def valid_prev(token):
+        return token is not None
+
+    def valid_next(token):
+        if token is None or token.ttype not in official.T_NUMERICAL:
+            return False
+        # 单位关键字不能缺：``interval 1`` 本身不是合法字面量
+        _, unit = tlist.token_next(tlist.token_index(token))
+        return unit is not None and unit.match(*sql.TypedLiteral.M_EXTEND)
+
+    def match_to_extend(token):
+        return isinstance(token, sql.TypedLiteral)
+
+    def valid_final(token):
+        return token is not None and token.match(*sql.TypedLiteral.M_EXTEND)
+
+    def post(tlist_, pidx, tidx, nidx):
+        return tidx, nidx
+
+    official._group(  # noqa: SLF001 官方遍历原语，配合本项目判定回调使用
+        tlist, sql.TypedLiteral, match, valid_prev, valid_next, post, extend=False
+    )
+    official._group(  # noqa: SLF001 官方遍历原语，配合本项目判定回调使用
+        tlist, sql.TypedLiteral, match_to_extend, valid_prev, valid_final, post, extend=True
+    )
 
 
 def _group_level(tlist):
@@ -103,7 +163,94 @@ def _group_level(tlist):
     )
 
 
+def _splice_continuations(tlist):
+    """把「跟在本层逗号之后」的子 ``IdentifierList`` 摊平到本层。
+
+    官方 ``group_identifier_list`` 先按注释把列表切成若干段，各段已各自成组。
+    本层再做归并时，若直接把这些子列表整块并进来，就会得到
+    ``IdentifierList`` 套 ``IdentifierList`` 的畸形结构（对齐阶段会按两层
+    缩进累加，列位置完全错乱）。这类「续接」子列表在官方遍历里只有一种来源：
+    紧跟在某个逗号之后。先摊平它们，再统一归并成一张平表。
+    """
+    idx = 0
+    while idx < len(tlist.tokens):
+        token = tlist.tokens[idx]
+        if isinstance(token, sql.IdentifierList):
+            _, prev_ = tlist.token_prev(idx, skip_cm=True)
+            if prev_ is not None and _match(prev_):
+                tlist.tokens[idx:idx + 1] = token.tokens
+                for child in token.tokens:
+                    child.parent = tlist
+                _refresh_values(tlist)
+                continue  # 摊平后可能又暴露出新的续接子列表，重新检查本位置
+        idx += 1
+
+
+def _unabsorb_trailing_comments(tlist):
+    """把官方 ``align_comments`` 并入前一个 ``TokenList`` 的注释提回父层。
+
+    官方 ``align_comments`` 会把注释与它前面的 ``TokenList`` 合成一组
+    （``extend=True``），好让注释跟着那个 token 走；副作用是注释成了该组的**末尾**。
+    于是 ``LayoutPass._process_comment`` 里 ``plist[-1] == tlist`` 的判定会让它放弃
+    对齐，紧跟在注释后的 token（典型是同级闭括号 ``)``）就落到行首。
+    旧 fork 的分组从不并入，注释始终留在它字面所在的那一层（父层紧随其后）。
+    这里还原成同一形状：注释连同紧邻的前导空白一起提到父层、放在该组之后。
+    """
+
+    for sgroup in list(tlist.get_sublists()):
+        _unabsorb_trailing_comments(sgroup)
+
+    parent = tlist.parent
+    if parent is None:
+        return
+
+    # 从组尾往前收集「注释（及其前导空白）」构成的尾巴
+    start = len(tlist.tokens)
+    while start > 0 and isinstance(tlist.tokens[start - 1], sql.Comment):
+        start -= 1
+        if start > 0 and tlist.tokens[start - 1].is_whitespace:
+            start -= 1
+    # 全是注释的组保持原样，否则等于把整组搬走
+    if start == 0 or start == len(tlist.tokens):
+        return
+
+    tail = tlist.tokens[start:]
+    del tlist.tokens[start:]
+    idx = parent.token_index(tlist) + 1
+    for offset, token in enumerate(tail):
+        token.parent = parent
+        parent.tokens.insert(idx + offset, token)
+    _refresh_values(tlist)
+
+
+def _absorb_leading_comments(tlist):
+    """把紧跟在 ``IdentifierList`` 前面的注释并到该列表首位。
+
+    官方 ``align_comments`` 只把注释并到它**前面**的 TokenList 末尾；旧 fork 相反，
+    并到它**后面**的 IdentifierList 首位，注释说得很清楚：「否则 select 后有注释时
+    IdentifierList 取首个 Identifier 的位置不对」。本项目按 fork 口径补这一步，
+    否则 ``group_concat(-- c\\n a, b)`` 里注释停在括号层，换行后取错对齐偏移。
+    """
+
+    for sgroup in list(tlist.get_sublists()):
+        _absorb_leading_comments(sgroup)
+
+    idx = 0
+    while idx < len(tlist.tokens):
+        token = tlist.tokens[idx]
+        if _is_comment(token):
+            _, next_ = tlist.token_next(idx, skip_cm=True)
+            if isinstance(next_, sql.IdentifierList):
+                del tlist.tokens[idx]
+                next_.insert_before(0, token)
+                token.parent = next_
+                _refresh_values(tlist)
+                continue
+        idx += 1
+
+
 def _walk(tlist):
+    _splice_continuations(tlist)
     for sgroup in list(tlist.get_sublists()):
         _walk(sgroup)
     # 已经是列表的层不再归并，否则会在列表内部再套一层列表
@@ -113,7 +260,10 @@ def _walk(tlist):
 
 
 def group(stmt):
-    """官方分组 + 注释容忍补偿。调用方用它替换 ``grouping.group``。"""
+    """官方分组 + 本项目补偿。调用方用它替换 ``grouping.group``。"""
+    _group_interval_literals(stmt)  # 必须在官方分组之前
     stmt = official.group(stmt)
     _walk(stmt)
+    _unabsorb_trailing_comments(stmt)
+    _absorb_leading_comments(stmt)
     return stmt

@@ -13,6 +13,7 @@ from sqlparse import engine, filters, formatter
 
 from sqlfmt_ext import grouping, policy  # noqa: F401  确保分词补丁 ttype 已派生
 from sqlfmt_ext.filters.operators import SpacesAroundOperatorsFilter
+from sqlfmt_ext.filters.whitespace import StripWhitespaceFilter
 from sqlfmt_ext.lexer import build_lexer
 from sqlfmt_ext.options import validate_options
 from sqlfmt_ext.passes.layout import LayoutPass
@@ -58,6 +59,13 @@ def _swap_operators_filter(stack):
             stack.stmtprocess[index] = SpacesAroundOperatorsFilter()
 
 
+def _swap_whitespace_filter(stack):
+    """把官方 StripWhitespaceFilter 实例换成「先合并空白段再 strip」的子类实例。"""
+    for index, flt in enumerate(stack.stmtprocess):
+        if type(flt) is filters.StripWhitespaceFilter:
+            stack.stmtprocess[index] = StripWhitespaceFilter()
+
+
 def _replace_skeleton_filters(stack, opts):
     """摘掉官方换行 filter，原位换成本项目 LayoutPass。"""
     position = None
@@ -80,6 +88,7 @@ def _assemble(opts):
     stack = FilterStack(build_lexer(opts.get("dialect")))
     formatter.build_filter_stack(stack, opts)
     _swap_operators_filter(stack)
+    _swap_whitespace_filter(stack)
     _replace_skeleton_filters(stack, opts)
     return stack
 
