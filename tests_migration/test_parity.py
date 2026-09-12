@@ -20,11 +20,9 @@ from tests.fixtures.sql_cases import SQL_CASES, normalize_sql
 
 _ALIGN = "列对齐（AlignPass）未实现"
 
-# 未复现用例 → 原因（修好一个删一个）
-KNOWN_DIFF = {
-    # --- S6：列对齐（含注释列 / 末尾逗号列 / from 缩进） ---
-    "nested/sqltest3_s01": _ALIGN,
-}
+# 未复现用例 → 原因（修好一个删一个）。**已清空**：S6 收尾把最后一项带走，
+# 现在「实现能复现的用例」全部通过；剩下的只有下面 DEVIATIONS（口径重定）。
+KNOWN_DIFF = {}
 
 # 有意偏离：新架构**不打算**复现旧基线的用例（口径重定，不是「还没做」）。
 # 每项 = (理由, 把 canonical 变换成新基线的方式)；理由必须写清「差在哪、为什么」，

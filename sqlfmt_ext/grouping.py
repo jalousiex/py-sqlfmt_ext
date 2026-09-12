@@ -341,13 +341,16 @@ def _extend_adjacent_lists(tlist):
         # 形态 A：紧邻一个「续接列表」——同一层被切成两张表，并回去。
         # - 以逗号开头：`case/sqltest4_s01` 里 `t.*` 就是这么待着的
         #   （`str(它) == '      ,\n       t.*'`）；
-        # - 以注释开头：`nested/sqltest3_s01` 的 `/*-*/ + over(…) as rn` 被切成第二张表，
-        #   先并回同一层，U14 的 `_attach_over_to_functions` 才认得出
-        #   「`Function` + 注释 + `Over`」把它合成一项。
+        # - 以注释开头：`nested/sqltest3_s01` 里 list A 以 `Function[ROW_NUMBER()]` 收尾，
+        #   `/*-*/ + over(…) as rn` 及其后 4 个长项自成 list B（`str(list B)` 以 `/*-*/\n`
+        #   开头）。先并回同一层，U14 的 `_attach_over_to_functions` 才认得出
+        #   「`Function` + 注释 + `Over`」并合成一项（fork 就是这么一项）。
+        #   注意注释在这里是 `sql.Comment` **组**（ttype 为 None），不能用 `ttype in T.Comment`。
         if (
             isinstance(next_, sql.IdentifierList)
             and (first := next_.token_first(skip_ws=True)) is not None
-            and first.match(T.Punctuation, ",")
+            and (first.match(T.Punctuation, ",") or _is_comment(first)
+                 or first.ttype in T.Comment)
         ):
             gap = tlist.tokens[idx + 1:nidx]  # 两张表之间的空白，一起搬进去保持文本顺序
             subtokens = gap + list(next_.tokens)
@@ -846,6 +849,9 @@ def group(stmt):
     # 全部收尾后再并一次相邻列表：`_walk` 期间 `over(...)` 还散在列表外，
     # `list1 / over(...) rn / list2(', t.*')` 这个形态要等 U14 补包合回去之后才成立
     _normalize_adjacent_lists(stmt)
+    # 合并把「`Function` + 注释 + `Over`」重新凑到同一层之后，补包得再跑一次才认得出
+    # （`nested/sqltest3_s01` 的 `ROW_NUMBER() /*-*/ + over(…) as rn` 就是这个时序）
+    _attach_over_to_functions(stmt)
     return stmt
 
 
