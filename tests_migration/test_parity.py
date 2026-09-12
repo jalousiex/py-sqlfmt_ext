@@ -24,10 +24,10 @@ KNOWN_DIFF = {
     # 属已知不收敛用例；官方 strip 之下没有该换行可用，必须先定下结构性规则
     # （L5）或重定基线，暂列 KNOWN_DIFF。
     "case/sqltest4_s03": _CASE_FIRST_WHEN,
-    "comma/sqltest7_s02": _COMMENT,
+    # L1 注释断行已修，残留差异是 A3 注释列对齐（S6）
+    "nested/sqltest3_s01": _ALIGN,
     "cte/sqltest2_s02": _COMMENT,
     "dml/sqltest1_s01": _COMMENT,
-    "nested/sqltest3_s01": _COMMENT,
     "nested/sqltest3_s02": _COMMENT,
     "window/sqltest6_s01": _COMMENT,
     "window/sqltest6_s03": _COMMENT,

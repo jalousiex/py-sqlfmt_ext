@@ -566,8 +566,40 @@ class LayoutPass(AlignMixin):
             if isinstance(sgroup, sql.Comment):
                 self._process_comment(sgroup)
 
+    @staticmethod
+    def _is_comment(token):
+        """判断 token 是否为注释 —— 既覆盖 `sql.Comment` 分组，也覆盖裸注释 token。"""
+        return isinstance(token, sql.Comment) or token.ttype in T.Comment
+
+    def _break_between_comments(self, tlist):
+        """Comment 组内相邻注释强制各自成行 —— 两个注释不共享一行。
+
+        这是**结构性**规则，不依赖输入空白：旧实现靠「strip 保留换行」的残留把两个
+        注释分开，一旦输入被压平（收敛性测试）它们就被挤到同一行，因此
+        `comma/sqltest7_s02` 与 `nested/sqltest3_s01` 在旧实现里是已知不收敛用例。
+
+        注意 ``--`` 行注释的 token 自带行尾 ``\\n``，此时已经在新行行首，无需处理。
+        """
+        tokens = tlist.tokens
+        for idx in range(1, len(tokens)):
+            token = tokens[idx]
+            if not self._is_comment(token):
+                continue
+            prev_ = tokens[idx - 1]
+            if prev_.is_whitespace:
+                if self.n in prev_.value:
+                    continue
+                prev_.value = self.n
+            elif self._is_comment(prev_):
+                # `--` 注释的 token 自带行尾换行，此时已经在新行行首
+                if prev_.value.endswith(self.n):
+                    continue
+                tlist.insert_before(token, self.nl(0))
+
     def _process_comment(self, tlist):
         # 深度遍历时的注释要基于父对象处理，在后一token前换行，含新增的强制换行
+        # 注释组内相邻注释先各自成行（结构性规则，与下方「跟随输入换行」的分支无关）
+        self._break_between_comments(tlist)
 
         # comma_first 模式下，IdentifierList 中的注释已由 _process_identifierlist 处理，跳过
         if self.comma_first and isinstance(tlist.parent, sql.IdentifierList):
