@@ -5,6 +5,10 @@
 > **正在进行重构**：目标形态是「官方 sqlparse 之上的小侵入外挂」。
 > 计划、步骤拆分与验收标准见 [PLAN.md](PLAN.md)。
 > 迁移期新实现位于 `sqlfmt_ext/`，对拍进度条跑 `pytest tests_migration/ -q`。
+>
+> ⚠️ 迁移期有**两个** `sqlparse`：仓库内旧 fork（`tests/` 用）与 `.venv` 里的
+> 官方包（`tests_migration/` 用）。**必须分开跑**，同一次 pytest 会话里混跑会被
+> 直接拦截报错——同进程只能加载一个。
 
 ## 架构
 

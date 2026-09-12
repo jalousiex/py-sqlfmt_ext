@@ -20,7 +20,7 @@ DEFAULT_OPTIONS = {
 # 本项目扩展项 → 默认值（官方不认识的键）
 EXTENSION_DEFAULTS = {
     "align_list": True,  # 字段列表 AS/别名列对齐
-    "dialect": None,  # None = 完全走官方行为
+    "dialect": "doris",  # 本项目的目标方言；None = 完全走官方分词
 }
 
 _BOOL_EXTENSIONS = ("align_list",)

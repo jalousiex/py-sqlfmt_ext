@@ -30,18 +30,27 @@
 
 ## 2. 架构
 
-### 2.1 管线（四段）
+### 2.1 管线（落地形态）
 
 ```
 sql
- → Lexer / StatementSplitter / grouping            （官方）
- → 官方 strip（换行压成 ''/' '）                    （官方）
- → 官方 SpacesAroundOperatorsFilter                （本项目换装子类，泛型尖括号）
- → 官方 AlignedIndentFilter  ← 换行骨架            （官方）
- → LayoutPass                ← 只改换行位置         （本项目）
- → AlignPass                 ← 只改同行空白宽度      （本项目）
- → SerializerUnicode                               （官方）
+ → DialectLexer（官方 Lexer 子类，追加 Doris 分词补丁）  （本项目）
+ → StatementSplitter / grouping / 其余 preprocess      （官方）
+ → 官方 SpacesAroundOperatorsFilter                    （本项目换装子类，泛型尖括号）
+ → 官方 strip（换行压成 ''/' '）                        （官方）
+ → LayoutPass  ← 唯一的换行骨架 + 同行对齐规则集        （本项目）
+ → SerializerUnicode                                   （官方）
 ```
+
+**相对计划的两处修订（落地后确认）：**
+
+1. **官方 `AlignedIndentFilter` 不再放进 stack。** 它只有 `char` 一个参数、
+   缩进口径也不同（每级 8 列 vs 本项目 6 列），留在 stack 里只会产出一份立刻
+   被覆盖的空白。装配仍完全由官方 `build_filter_stack` 决定，本项目只是在装配
+   后**原位摘掉**它（同 `_swap_operators_filter` 的手法）。
+2. **对齐规则以 mixin 组合进 `LayoutPass`，不做成独立后置 pass。** 断行宽度与
+   列对齐互相依赖（例如 CASE 的 THEN 对齐要先知道条件宽度），拆开需要重复遍历
+   并重复计算偏移，收益不抵风险。规则集仍物理隔离在 `align.py`。
 
 **核心洞察**：官方 strip 之后 token 流里没有任何原始换行，因此
 「换行骨架」完全由官方 filter 决定，本项目只做**增量修饰**。
@@ -52,13 +61,15 @@ sql
 
 ### 2.2 分层职责
 
-| 目录 | 职责 | 允许依赖 |
+| 文件 | 职责 | 允许依赖 |
 |---|---|---|
 | `sqlfmt_ext/options.py` | 默认选项 + 扩展项校验，转交官方 `validate_options` | 官方 |
-| `sqlfmt_ext/dialects.py` | 方言声明式注册（Doris/SelectDB → SQL Server） | 官方 |
-| `sqlfmt_ext/stack.py` | 装配：复用官方 `build_filter_stack`，换装 operators filter，插入两个 pass | 官方 |
+| `sqlfmt_ext/policy.py` | 格式化口径：换行锚点关键字（`split_words`/`join_words`/`by_words`）+ 分词补丁表 | 官方 |
+| `sqlfmt_ext/lexer.py` | `DialectLexer`：官方 `Lexer` 子类，初始化后追加方言补丁 | 官方 |
+| `sqlfmt_ext/stack.py` | 装配：复用官方 `build_filter_stack`，注入 lexer、换装 operators filter、摘换行 filter | 官方 |
 | `sqlfmt_ext/filters/` | 官方 filter 的**子类**（唯一允许替换官方行为的地方） | 官方 |
-| `sqlfmt_ext/passes/` | 纯增量修饰（只改空白） | 官方 |
+| `sqlfmt_ext/passes/layout.py` | 断行骨架 + 缩进宽度（唯一换行决策处） | 官方 |
+| `sqlfmt_ext/passes/align.py` | 同行空白宽度（列对齐规则集，mixin） | 官方 |
 | `sqlfmt.py` | **最终**只作薄 shim，转发到 `sqlfmt_ext` | `sqlfmt_ext` |
 
 ### 2.3 迁移期共存
@@ -71,7 +82,12 @@ tests_migration/        对拍进度条（跑在官方 + 新实现上）
 ```
 
 `tests_migration/conftest.py` 把仓库根挪到 `sys.path` 末尾，让 `.venv` 的官方包优先；
-S6 删除 fork 后该 conftest 一并删除。
+S7 删除 fork 后该 conftest 一并删除。
+
+> ⚠️ **两个套件不能在同一次 pytest 会话里一起跑**：上面这个 `sys.path` 调整是
+> **进程级**副作用（同进程只能加载一个 `sqlparse`），而 `tests/` 依赖仓库内旧
+> fork。混跑会静默出现「主套件 117 个失败」。`tests_migration/conftest.py` 里的
+> `pytest_configure` 已经把这种混跑拦成明确报错，并提示分别运行的方式。
 
 ---
 
@@ -101,9 +117,33 @@ S6 删除 fork 后该 conftest 一并删除。
 
 | 套件 | 命令 | 现状 |
 |---|---|---|
-| 主套件 | `.venv\Scripts\python.exe -m pytest -q` | `170 passed, 6 xfailed` |
-| 对拍进度条 | `.venv\Scripts\python.exe -m pytest tests_migration/ -q` | `1 passed, 30 xfailed` |
-| 诊断报告 | `.venv\Scripts\python.exe _tmp_parity.py` | A/B/C 分类 + 首处差异 |
+| 主套件（旧 fork） | `.venv\Scripts\python.exe -m pytest tests/ -q` | `170 passed, 6 xfailed` |
+| 对拍进度条（新外挂） | `.venv\Scripts\python.exe -m pytest tests_migration/ -q` | `4 passed, 27 xfailed` |
+| 诊断报告 | `.venv\Scripts\python.exe _tmp_gap.py` | 逐用例首处差异 + 异常容错 |
+
+已复现：`debug/sqldebug_s02`、`case/sqltest4_s03`（CASE 首个 WHEN）、
+`generic/sqltest8_s01`（`select * from` 折叠）、`ddl/sqltest0_s04`（`ON COMMIT`）。
+
+### 3.4 上游 0.6.0 与旧 fork 的语义差异清单（迁移的真实成本）
+
+用脚本逐项对比得到的结论：旧 fork 不是「官方 + 小补丁」，而是 **sqlparse 0.5.x
++ 大量改写**。把基线换成官方 0.6.0 后，以下差异会直接影响输出，已确认的有：
+
+| # | 位置 | 差异 | 处置 |
+|---|---|---|---|
+| U1 | 官方 `keywords.SQL_REGEX` | 缺 Doris 条目（`ON COMMIT`/`REFRESH`/`DISTRIBUTED BY`/`LATERAL VIEW` 等） | ✅ 已在 `policy.py` 以追加方式补上 |
+| U2 | 官方 `lexer.Lexer` | 模块级单例，`FilterStack.run` 硬引用 | ✅ `DialectLexer` 子类 + `FilterStack.run` 覆写（只改 lexer 来源） |
+| U3 | 官方 `TokenList.token_next_by` | 没有 `_reverse` 参数 | ✅ 用 `_token_prev_by` 等价实现 |
+| U4 | 官方 `IdentifierList.get_identifiers` | 不过滤注释（fork 过滤） | ✅ 在 `_process_identifierlist` 里过滤 |
+| U5 | 官方 `Case.get_cases` | fork 增加了 `--` 注释占位逻辑 | ⏳ 未处理，影响 CASE 内注释 |
+| U6 | 官方 `Where.M_CLOSE` / `TypedLiteral.M_CLOSE` | fork 移除了 `GROUP BY`/`ORDER BY`/`LIMIT`/`UNION`，并给数字补 `M_CLOSE` | ⏳ 未处理，影响 WHERE 分组边界 |
+| U7 | 官方 `NameAliasMixin.get_real_name` | fork 取**第一个**点号，官方取最后一个 | ⏳ 影响 `a.b.c` 别名 |
+| U8 | 官方 `statement_splitter` / `lexer.find_delimited_spans` | 0.6.0 是新实现（嵌套块、美元引号） | ✅ 对现有 fixture 无影响 |
+| U9 | 官方 `grouping.valid_next` | fork 允许关键字作字段名 | ⏳ 未处理，暂未观察到影响 |
+
+**结论**：U5–U7 是「官方内部语义」差异，无法通过外挂层参数解决，只能
+（a）在本项目里做等价补偿，或（b）接受少量输出差异。
+每条都要单独评估，属于 S2–S5 的隐藏成本。
 
 ---
 
@@ -163,16 +203,21 @@ A1  (6): aggregate/s01 s02 | debug/sqldebug_s01 | dml/s07 s08 | window/s02
 - **净效果**：对拍套件中 `xfailed` 数量下降到该步骤的目标值；
 - **不回归**：主套件保持 `170 passed, 6 xfailed`。
 
-| 步骤 | 内容 | 目标 | 对拍目标 | 风险 |
+| 步骤 | 内容 | 目标 | 对拍 | 状态 |
 |---|---|---|---|---|
-| **S0** | 计划落地（本文档）+ 骨架 + 对拍进度条 | — | 1 passed / 30 xfailed | 已达成 |
-| **S1** | `LayoutPass` L1 注释强制换行 | +12 | 13 passed / 18 xfailed | 行尾/行首两种注释位置要分别处理；`comma_first` 下注释归属列需与 A3 协同 |
-| **S2** | `LayoutPass` L2 括号字段列表展开 | +7 | 20 passed / 11 xfailed | 需区分「简单括号」与「DDL/INSERT 字段列表」；不得影响 `wrap_after` 折行 |
-| **S3** | `LayoutPass` L3 语句/CTE 换行 | +1（并补齐 `dml/s02`、`s03`） | 21 passed / 10 xfailed | 与 L2 叠加，处理顺序敏感 |
-| **S4** | `LayoutPass` L4–L7 四个单点规则 | +4 | 25 passed / 6 xfailed | 各自独立、低风险；L7 是白名单语义 |
-| **S5** | `AlignPass` A1–A3 列对齐 | +6 | **31 passed / 0 xfailed** | 最大变量：需在官方骨架上重算列宽（含 CJK 宽度口径） |
-| **S6** | 收敛 + 幂等 + 入口切换 + 删 fork | 新实现通过全部 4 套测试 | — | 双轨切单轨，必须一次性绿 |
-| **S7** | 方言层实装（Doris/SelectDB）+ SQL Server 适配 | 方言用例 | — | 独立于格式化核心，可并行 |
+| **S0** | 计划落地 + 骨架 + 对拍进度条 | — | 1 / 30 | ✅ 完成 |
+| **S1** | 把布局引擎移植到官方 0.6.0 之上：方言 lexer、分词补丁、`LayoutPass`（断行+对齐规则集）、摘掉官方换行 filter | 骨架跑通且不崩 | **4 / 27** | ✅ 完成 |
+| **S2** | 上游语义差异补偿 U5–U7（`Case.get_cases` 注释占位、`Where.M_CLOSE`、`get_real_name`） | — | — | ⏳ 待做，**建议先做**（影响面最大） |
+| **S3** | `LayoutPass` L1 注释强制换行（确定性规则：`--` 与 `/*-*/` 强制断行） | +12 | 16 / 15 | ⏳ 待做（最大单项） |
+| **S4** | `LayoutPass` L2 括号字段列表展开 | +7 | 23 / 8 | ⏳ 待做 |
+| **S5** | `LayoutPass` L3 语句/CTE 换行 + L4 多 LATERAL VIEW | +2 | 25 / 6 | ⏳ 待做 |
+| **S6** | `AlignPass` A1–A3 列对齐（含 CJK 宽度口径） | +6 | **31 / 0** | ⏳ 待做 |
+| **S7** | 收敛 + 幂等 + 入口切换 + 删 fork + 改 AGENTS.md/README | 新实现通过全部 4 套测试 | — | ⏳ 待做 |
+| **S8** | 方言层补完（Doris/SelectDB）+ SQL Server 适配 | 方言用例 | — | ⏳ 待做，可并行 |
+
+> 对拍列格式：`passed / xfailed`。
+> **L1 的规则要从「依赖输入换行」改成「结构性判定」**：`/*-*/` 与 `--` 强制断行、
+> 块注释 `/* */` 跟随原分组——这才是收敛性要求下的正确形态，也是旧实现做不到的。
 
 ### S6 收尾清单
 1. `sqlfmt.py` 改为薄 shim：`from sqlfmt_ext import format_statements`，保留 `DEFAULT_OPTIONS` 与 CLI 参数不变。
@@ -229,3 +274,5 @@ A1  (6): aggregate/s01 s02 | debug/sqldebug_s01 | dml/s07 s08 | window/s02
 | 日期 | 变更 |
 |---|---|
 | 2026-09-12 | 初稿：确立方案 A（官方包作 pip 依赖）、四段管线、6 组规则拆分、S0–S7 步骤拆分 |
+| 2026-09-12 | S1 落地后的修订：①官方 `AlignedIndentFilter` 不再进 stack，改由 `LayoutPass` 独占换行骨架；②对齐规则改为 mixin 组合而非独立后置 pass；③新增 §3.4 上游语义差异清单（U1–U9），步骤表按实际成本重排（新增 S2 语义补偿）。 |
+| 2026-09-12 | §4「明确不移植」更正：`*_newline` / `_pull_inline` / `_remove_prev_newline` 等函数**保留**——在官方 strip 之下它们不再承担「擦除输入换行」的职责，而是管理本 pass 自己插入的空白，属于固有工具；真正被删掉的只有 `_flatten_up_to_token` 的调用语义变化与旧 fork 的 strip 魔改。 |

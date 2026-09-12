@@ -41,10 +41,7 @@ KNOWN_DIFF = {
     "dml/sqltest1_s04": _FIELD_LIST,
     # --- LayoutPass：语句/CTE 换行 ---
     "ddl/sqltest0_s05": _STMT_SPLIT,
-    "ddl/sqltest0_s04": "ON COMMIT 刻意分行（白名单行为）",
     "dml/sqltest1_s06": "多个 LATERAL VIEW 未各自分行（LayoutPass）",
-    "generic/sqltest8_s01": "`select * from` 未折叠同行（LayoutPass）",
-    "case/sqltest4_s03": "CASE 首个 WHEN 未独占一行（LayoutPass）",
     # --- AlignPass：列对齐 ---
     "aggregate/sqltest5_s01": _ALIGN,
     "aggregate/sqltest5_s02": _ALIGN,
