@@ -606,6 +606,31 @@ fork 明确会正常建列表）被一起跳掉、内层列表被摊平。fork �
 
 **S6 剩余 3 个（交接信息，对拍 `28/3`）**：**只剩 S6b 一族**，三者同一入口。
 
+> **S6b 已定位到机制层（2026-09-12 第十轮，只诊断未改代码）**：
+> 症状「整体 +1 格」的真因是**列表项的组里带着尾随空白**，而
+> `_identifier_layout` 给无别名项算 offset 的公式是
+> `as_offset = _get_offset(token) + 1 + len(str(token).splitlines()[-1].encode("gbk"))`
+> —— **它把项内尾随空白也算进宽度**。
+> 以 `window/sqltest6_s03` 为例（`select a, b /*-*/, /*-*/ b as b1, c, * from tab t where …`）：
+> - 我们：项 `b` 的 `str()` 是 `'b '`（strip 后项内还剩 1 个空格）→ `as_offset = 7+1+2 = 10`
+>   → `max_as_offset = 10` → **所有项**的 alias 填充 +1（`a` 6→7 格、`b` 6→7 格），
+>   且 `b as b1` 的 `as` 前多一格（`b  as b1`）；
+> - fork：同一项测到的是 `'b'` → `as_offset = 9` → `max_as_offset = 9` → 全部正确。
+>
+> **验证手法**（都要用真实 fixture，孤立复现不触发）：
+> `python _tmp_align_probe.py "@tests/fixtures/cases/window/sqltest6_s03.sql"` 看
+> `as_offset=10 text='b '`（我们）—— 注意**孤立片段跑同一个列表是对的**（`as_offset=9 text='b'`），
+> 所以别用「抽出来跑」当结论。
+>
+> **待查（下一步从这里开始）**：是谁把空白留在了**项内部**而 fork 没有。两个重点嫌疑：
+> 1. `grouping._unabsorb_trailing_comments` 的收尾判定要求「组尾**最后一个 token 是注释**」
+>    （`while isinstance(tlist.tokens[start-1], sql.Comment)`）—— 若组尾是
+>    `[.., 注释, 空白]`（注释后面还拖一个空白），这段循环不会触发，注释与空白就都留在项里；
+> 2. `LayoutPass._process_comment` 的「紧贴前边的增加一个空格」（`plist.insert_before(pidx, ' ')`）
+>    —— 此时 `plist` 可能就是该项本身，空白被塞进项内，而注释随后又被搬走。
+> 建议先给 `_unabsorb_trailing_comments` 加「尾部空白先跳过再找注释尾巴」的判定试一次，
+> 跑 `_tmp_align_probe.py @该用例` 看 `text=` 是否变回 `'b'`，再跑两套件。
+
 *S6b —— 列表末尾列（`case/sqltest4_s01`、`nested/sqltest3_s01`、`window/sqltest6_s03`）*
 - `case/sqltest4_s01`：末项 `rn       ,` 我们**多 2 格**，且 `t.*` 没被断到下一行
   （我们 `… asc)    rn         , t.*`，期望 `rn       ,` + 换行 + `t.*`）；
