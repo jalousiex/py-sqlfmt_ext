@@ -648,6 +648,26 @@ fork 明确会正常建列表）被一起跳掉、内层列表被摊平。fork �
 > `window/sqltest6_s03` 已转正 → 对拍 `29/2`。
 >
 > **S6b 剩余 2 个（交接）**：
+>
+> **第十四轮（本轮）**：`case/sqltest4_s01` **已转正** —— 新增
+> `grouping._extend_adjacent_lists` + `_normalize_adjacent_lists`（探针实测最后一处断点：
+> `t.*` 待在**另一张以逗号开头的畸形表** `'      ,\n       t.*'` 里，而官方 `_group` 的
+> 「快照下标 − 累计偏移」在多次合并后漂移、末尾逗号轮不到）。修法 = 按**活下标**重扫，
+> 把「紧邻同类组 + 尾逗号 + 真实项」并进去（等价官方 `extend=True`），并在
+> **`_attach_over_to_functions` 之后再跑一遍**（U14 补包合回去之前，两张表还不相邻）。
+> 探针口径：`as_offset=11 alias_len=4 as=N text='t.*'` 与 fork 完全一致 ✓。
+> 试过但**无效且已回退**：把合并条件放宽到「第二张表以注释 / `Over` 开头」——对
+> `nested/sqltest3_s01` 无效果（说明它的形态又不是这两种）。
+>
+> **`nested/sqltest3_s01` 现状（下一个开工点）**：主 select 列表被切成**两张表** ——
+> 我们 `max_as_offset=20 max_alias_len=8`（4 项，最后一项只有 `ROW_NUMBER()`、无别名；
+> 它才是 `as_offset=20` 的来源），而 fork 是 `max_as_offset=101 max_alias_len=14`（8 项，
+> 最后一项是 `ROW_NUMBER() /*-*/\n over(…) as rn` 合体，另外还有 `[location]…`/`H2_…`/
+> `H3_…`/`lead(…)` 四长项）。**也就是：`/*-*/ + over(…) as rn` 及其后 4 项在我们这边
+> 自成第二张表** → 每张表各自算 `max_as_offset`，列宽自然差一大截。
+> 下一步：给 `_extend_adjacent_lists` 加临时打印，**在 `_normalize_adjacent_lists` 收尾后**
+> dump 语句层真实的兄弟序列（A / 中间是什么 / B），按实际形态定条件（别再用猜测的
+> 「注释/Over 开头」）。
 > - `case/sqltest4_s01`：末项 `rn       ,` 我们**多 2 格**，且 `t.*` **没被断到下一行**
 >   （我们 `… asc)    rn         , t.*`，期望 `rn       ,` + 换行 + `       t.*`）。
 >   **已定位到分组层（第十二轮）**：两侧探针对照显示 fork 的 select 列表有 **6 项**，

@@ -23,7 +23,6 @@ _ALIGN = "列对齐（AlignPass）未实现"
 # 未复现用例 → 原因（修好一个删一个）
 KNOWN_DIFF = {
     # --- S6：列对齐（含注释列 / 末尾逗号列 / from 缩进） ---
-    "case/sqltest4_s01": _ALIGN,
     "nested/sqltest3_s01": _ALIGN,
 }
 

@@ -308,6 +308,69 @@ def _group_level(tlist):
         extend=True,
         recurse=False,
     )
+    # 官方循环的位置用「快照下标 − 累计偏移」推，前面的合并多吃了 token 之后会漂，
+    # 于是**最后一个逗号**常常轮不到 —— 用活下标再扫一遍补齐（见函数 docstring）。
+    _extend_adjacent_lists(tlist)
+
+
+def _extend_adjacent_lists(tlist):
+    """把紧跟在本层 ``IdentifierList`` 之后的「``,`` + 项」并进那个列表。
+
+    官方 ``_group`` 的循环基于「快照 ``list(tlist)`` 的下标 − 累计 ``tidx_offset``」推算
+    活列表位置：一旦前面的合并吃掉的 token 数与偏移记账不一致，下标就会漂，**末尾那个
+    逗号**往往轮不到（探针实测：`case/sqltest4_s01` 的最后两个逗号里，``valid_prev``
+    根本没被调用）→ `t.*` 落在列表外，既不换行也不参与对齐。
+
+    旧 fork 的 ``group_identifier_list`` 是重写版，语义正是「**扩展相邻同类组**」
+    （其 ``group_tokens`` 轨迹里 ``start`` 不变、``end`` 递增：5→9→10→…）。
+    这里按活下标重扫一遍补齐，等价于官方 ``extend=True`` 的扩展本身。
+
+    只并「紧邻同类组 + 尾逗号 + 真实项」；末尾若是**子句关键字**（`from`/`where`…）交给
+    `_trim_clause_tail` 那套（U15），不在这里并。
+    """
+
+    idx = 0
+    while idx < len(tlist.tokens):
+        token = tlist.tokens[idx]
+        if not isinstance(token, sql.IdentifierList):
+            idx += 1
+            continue
+
+        nidx, next_ = tlist.token_next(idx, skip_ws=True, skip_cm=True)
+
+        # 形态 A：紧邻一个「续接列表」——同一层被切成两张表，并回去。
+        # - 以逗号开头：`case/sqltest4_s01` 里 `t.*` 就是这么待着的
+        #   （`str(它) == '      ,\n       t.*'`）；
+        # - 以注释开头：`nested/sqltest3_s01` 的 `/*-*/ + over(…) as rn` 被切成第二张表，
+        #   先并回同一层，U14 的 `_attach_over_to_functions` 才认得出
+        #   「`Function` + 注释 + `Over`」把它合成一项。
+        if (
+            isinstance(next_, sql.IdentifierList)
+            and (first := next_.token_first(skip_ws=True)) is not None
+            and first.match(T.Punctuation, ",")
+        ):
+            gap = tlist.tokens[idx + 1:nidx]  # 两张表之间的空白，一起搬进去保持文本顺序
+            subtokens = gap + list(next_.tokens)
+            del tlist.tokens[idx + 1:nidx + 1]
+            for tk in subtokens:
+                tk.parent = token
+            token.tokens.extend(subtokens)
+            _refresh_values(tlist)
+            idx += 1
+            continue
+
+        # 形态 B：本层「, + 真实项」还没并进左边的列表
+        cidx, comma = tlist.token_next(idx, skip_ws=True, skip_cm=True)
+        if comma is None or not comma.match(T.Punctuation, ","):
+            idx += 1
+            continue
+        eidx, end = tlist.token_next(cidx, skip_ws=True, skip_cm=True)
+        if end is None or not _real_item(end) or _is_clause_keyword(end):
+            idx += 1
+            continue
+        tlist.group_tokens(sql.IdentifierList, idx, eidx, extend=True)
+        _refresh_values(tlist)
+        idx += 1
 
 
 def _splice_continuations(tlist):
@@ -780,4 +843,14 @@ def group(stmt):
     _unabsorb_trailing_comments(stmt)
     _absorb_leading_comments(stmt)
     _attach_over_to_functions(stmt)
+    # 全部收尾后再并一次相邻列表：`_walk` 期间 `over(...)` 还散在列表外，
+    # `list1 / over(...) rn / list2(', t.*')` 这个形态要等 U14 补包合回去之后才成立
+    _normalize_adjacent_lists(stmt)
     return stmt
+
+
+def _normalize_adjacent_lists(tlist):
+    """自底向上再跑一次相邻列表归并（见 `_extend_adjacent_lists`）。"""
+    for sgroup in list(tlist.get_sublists()):
+        _normalize_adjacent_lists(sgroup)
+    _extend_adjacent_lists(tlist)
