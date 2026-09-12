@@ -36,8 +36,24 @@ sqlfmt.py → format_statements()
 - **C5** 各 pass 只允许改写 `Whitespace` token（不改 ttype、不重排、不删非空白 token）
 
 **元规则一：列对齐 / 字段列表整体错乱时，先怀疑分组口径，再查 pass。**
-**元规则二：任何结论都要写成最小重现**（`_tmp_cmp.py --fork/--new "<片段>"`），
-不要拿整条 fixture 下结论——历史上两次误判根因都是这么来的。
+（S6 段的 7 个「列对齐」用例里，5 个的真因是分组/分词：U15 尾逗号吞子句关键字、U16 缺 `DATETIME`、
+U13 CREATE 早退、S6b 项内尾随空白。）
+
+**元规则二：定性先写最小重现**（`_tmp_cmp.py --fork/--new "<片段>"`），别拿整条 fixture 下结论。
+
+**元规则三（元规则二的边界）：孤立片段与真实 fixture 行为不一致时，以 `@fixture` 的两侧探针为准。**
+「抽出来跑是好的」**不等于**实现正确——S6b 就栽在这里：同一个 select 列表抽出来跑完全正确，
+真因（项内尾随空白抬高 `max_as_offset`）只有在 `_tmp_align_probe.py --fork/--new "@真实fixture"` 里才显形。
+**两次对照都做，且必须用同一份输入。**
+
+**元规则四：改对齐/换行算术前，先 diff 我方与 fork 的对应函数。**
+逐行相同就别改算术——差异只可能在**入参**（offset / 列表项集合 / 分组形状）。
+S6a 就是这样一步锁定的（`align.py` 三个函数与 fork 完全一致 → 直接去查 `field_lines`）。
+
+**元规则五：同一根因的改动常常成对出现（分组侧 + 布局侧），改完必须跑全量对拍。**
+S6b 的「注释前导空白整段搬出组」必须与「注释串延续改判同层兄弟」**同时**改，
+单独改会各红一个用例（只改前者 → `cte/sqltest2_s02` 退回列 0；只改后者 → 无效）。
+**别只看目标用例的绿，先看全量对拍有没有别的红。**
 
 ## 关键文件
 
@@ -69,13 +85,23 @@ sqlfmt.py → format_statements()
 
 ## 诊断工具（迁移期临时脚本，未跟踪；S7 统一删除）
 
-`_tmp_check.py`（逐用例首 2 处差异 + 「是否只是空白宽度」，`-v` 看全量）·
-`_tmp_cmp.py --fork/--new "<片段>"`（两侧输出对照）·
-`_tmp_nt.py` / `_tmp_forkidx.py`（两侧 token 树 dump）。
+| 脚本 | 用途 |
+|---|---|
+| `_tmp_check.py [-v] [用例名]` | 逐用例首 2 处差异 + 「是否只是空白宽度」，看全局格局 |
+| `_tmp_cmp.py --fork/--new "<片段>"` | 两侧**输出**对照 |
+| `_tmp_nt.py "<片段>"` / `_tmp_forkidx.py` | 两侧 **token 树** dump（都支持 `@相对路径`） |
+| `_tmp_align_probe.py --fork/--new @fixture` | **列对齐中间量**：`[layouts]` 的 `max_as_offset`/`max_alias_len`／每项 `as_offset`／`[apply]` 前后文本 |
+| `_tmp_ddlprobe.py --fork/--new @fixture` | **DDL 字段列**中间量：`field_lines`／每列 `max_offset`／每个 token 的 offset |
+| `_tmp_lv.py "<片段>"` | 语句层每个 token 对 `split_words` 的命中（查「关键字没触发换行」） |
 
-**踩过的坑**：`FilterStack.run(sql)` 返回**生成器**，不消费等于没跑；
-fork 与新实现必须**两次独立进程**跑（同进程只能加载一个 `sqlparse`，fork 侧脚本要显式传 `align_list=True`）；
-比对不能只比「非空白 token 序列」（格式化不重排 token，恒等），要比「行内容」才能分离换行位置差异。
+**坑位（每条都是真踩过的）**
+- `FilterStack.run(sql)` 返回**生成器**，不消费等于没跑。
+- fork 与新实现必须**两次独立进程**跑（同进程只能加载一个 `sqlparse`）；fork 侧脚本要显式传 `align_list=True`。
+- 比对不能只比「非空白 token 序列」（格式化不重排 token，恒等），要比「行内容」才能分离换行位置差异。
+- **诊断脚本一次补齐两侧模式 + `@相对路径`**：少了就得来回跑好几轮（S6a/S6b 都是补完探针才一步定案）。
+- **临时探针用运行时 patch 写进 `_tmp_*.py`，不要往源码里塞 `print`**；真塞了必须当轮删掉。
+- **「关掉它做对照」是验证元凶的硬手段**：把可疑改动换成 no-op（或 `return None` 提前退出）再跑一次，
+  现象若不变说明找错了地方（S4c/守卫边界就是这么被证伪/证实的）。
 
 ## 项目约定
 
