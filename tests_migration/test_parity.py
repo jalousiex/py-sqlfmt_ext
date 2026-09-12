@@ -24,10 +24,12 @@ _ALIGN = "列对齐（AlignPass）未实现"
 KNOWN_DIFF = {
     # --- S5：结构性折行 ---
     # 窗口函数断行：期望 `ROW_NUMBER() --` 独占一行、`over(...)` 另起。
-    # 真因是分组口径（U14）：官方 group_functions 用「下标相邻」判定要不要把 OVER
-    # 并进 Function，`)` 与 `over` 之间**隔着注释**时判定失败 → 注释把列表打断，
-    # 见 PLAN §9.3「S5b」。
-    "cte/sqltest2_s02": "U14：`)` 与 `over` 之间的注释挡住官方 over 并入 Function",
+    # U14 = 官方 group_functions 用「下标相邻」判定要不要把 OVER 并进 Function，
+    # `)` 与 `over` 之间**隔着注释**时判定失败 → 注释把列表打断、列表不展开。
+    # 分组侧已补偿（`grouping._attach_over_to_functions`）：把该语句单独拿出来跑，
+    # 输出已与期望逐字节相同。**剩下的差异只在 CTE/`create view` 上下文里出现**
+    # （同一列表在那边不展开、`as` 列也没对齐到同一基准），属另一个根因，见 PLAN §9.3。
+    "cte/sqltest2_s02": "U14 分组已补偿；残差是 CTE 上下文里内层 select 列表不展开",
     # --- S6：列对齐（含注释列 / 末尾逗号列 / from 缩进） ---
     "case/sqltest4_s01": _ALIGN,
     # ddl/s01 除对齐外还差一条：官方 `group_functions` 对 CREATE+TABLE 提前 return，

@@ -473,6 +473,151 @@ def _walk(tlist):
     _group_level(tlist)
 
 
+def _is_alias(token):
+    """``over(...)`` 后面的隐式别名（``… asc)    rn`` 里的 ``rn``）。
+
+    注意先判 ``Identifier`` 组：分组的 ``ttype`` 是 ``None``，用 ``ttype`` 判空会把
+    已包成 ``Identifier`` 的别名直接漏掉。
+    """
+    if token is None or isinstance(token, sql.Comment):
+        return False
+    if isinstance(token, sql.Identifier):
+        return True
+    if token.ttype is None:
+        return False
+    return token.ttype in T.Name or token.ttype in T.String
+
+
+def _last_function_of(token):
+    """沿「最后一个非空白子 token」下钻，返回其中的 ``Function``；找不到返回 ``None``。"""
+    while isinstance(token, sql.TokenList):
+        if isinstance(token, sql.Function):
+            return token
+        nxt = None
+        for child in reversed(token.tokens):
+            if not child.is_whitespace:
+                nxt = child
+                break
+        if nxt is None:
+            return None
+        token = nxt
+    return None
+
+
+def _attach_over_to_functions(tlist):
+    """把 ``)`` 与 ``OVER`` 之间**夹着注释**的 ``OVER (…)`` 并回 ``Function``（U14）。
+
+    官方 ``group_functions`` 判定要不要把 ``OVER`` 并进 ``Function`` 用的是**下标相邻**
+    （``over_idx - 1 == tidx + 1``）：``)`` 与 ``over`` 之间只有空白时没问题（与 fork 同形，
+    ``Function[Identifier, Parenthesis, ws, Over]``），夹了 ``Comment`` 时判定失败 ——
+    ``OVER`` 被留在 ``Function`` 外面，而它前面的注释随即把外面的 ``IdentifierList``
+    打断（列表不再按项展开、``over`` 也不另起一行 → ``cte/sqltest2_s02``）。
+
+    这里做一次**靶向搬移**，还原 fork 的形状（fork 的 ``group_functions`` 本身就产出它）::
+
+        IdentifierList[…,
+          Identifier[Function[Identifier, Parenthesis, ws, Comment, Over], ws, as, ws, Identifier]]
+
+    只在守卫全部成立时动手（锚点以 ``Function`` 且以 ``Parenthesis`` 收尾、中间只有
+    空白与注释、后面那个子组以 ``Over`` 开头），否则原样返回。
+    """
+
+    for sgroup in list(tlist.get_sublists()):
+        _attach_over_to_functions(sgroup)
+
+    idx = 0
+    while idx < len(tlist.tokens):
+        holder = tlist.tokens[idx]
+        if isinstance(holder, sql.Over):
+            # 无显式 AS：官方把 `over(...)` 直接放在这一层（外面没套 Identifier）
+            over, rest, end = holder, [], idx
+        elif (
+            isinstance(holder, sql.TokenList)
+            and holder.tokens
+            and isinstance(holder.tokens[0], sql.Over)
+        ):
+            # `over(...) as rn`：别名和 Over 在同一个子组里
+            over, rest, end = holder.tokens[0], holder.tokens[1:], idx
+        else:
+            idx += 1
+            continue
+
+        # 往回收集「空白 + 注释」段；段内至少要有一个注释，否则官方已经处理过
+        cursor = idx - 1
+        comments = 0
+        while cursor >= 0:
+            token = tlist.tokens[cursor]
+            if token.is_whitespace:
+                cursor -= 1
+                continue
+            if isinstance(token, sql.Comment):
+                comments += 1
+                cursor -= 1
+                continue
+            break
+
+        anchor = tlist.tokens[cursor] if cursor >= 0 else None
+        fn = _last_function_of(anchor)
+        if (
+            not comments
+            or fn is None
+            or not fn.tokens
+            or not isinstance(fn.tokens[-1], sql.Parenthesis)
+        ):
+            idx += 1
+            continue
+
+        # 锚点之后到 holder 之前（空白 + 注释）连同 Over 一起搬进 Function
+        if rest:
+            # `over(...) as rn`：别名与 Over 同在一个子组。只把 Over 搬进 Function，
+            # 子组剩下的部分（ws + as + ws + 别名）就是同一列表项的其余内容。
+            into_function = [*tlist.tokens[cursor + 1:idx], over]
+            end = idx
+        else:
+            # 隐式别名（`… asc)    rn`）：它在 Over 后面，是本层的兄弟 token
+            alias_ws = []
+            scan = idx + 1
+            while scan < len(tlist.tokens) and tlist.tokens[scan].is_whitespace:
+                alias_ws.append(tlist.tokens[scan])
+                scan += 1
+            alias = tlist.tokens[scan] if scan < len(tlist.tokens) else None
+            into_function = tlist.tokens[cursor + 1:idx + 1]
+            if _is_alias(alias):
+                rest = [*alias_ws, alias]
+                end = scan
+            elif (
+                isinstance(alias, sql.IdentifierList)
+                and alias.tokens
+                and _is_alias(alias.tokens[0])
+            ):
+                # 别名被夹在一个多出来的列表里（`rn` + `,` + `from`）：摘出别名，
+                # 剩下的 `,` / `from` 摊平回本层 —— fork 的尾部逗号本来就是散的
+                rest = [*alias_ws, alias.tokens[0]]
+                del alias.tokens[0]
+                tlist.tokens[scan:scan + 1] = alias.tokens
+                for child in alias.tokens:
+                    child.parent = tlist
+                end = scan - 1
+
+        for child in into_function:
+            child.parent = fn
+        fn.tokens.extend(into_function)
+
+        container = fn.parent if fn.parent is not None else anchor
+        if rest:
+            # 与 fork 同形：把「Function + 别名」重新包成同一个列表项
+            new_item = sql.Identifier([fn, *rest])
+            new_item.parent = container
+            pos = container.token_index(fn)
+            container.tokens[pos:pos + 1] = [new_item]
+        del tlist.tokens[cursor + 1:end + 1]
+        _refresh_values(fn)
+        # 搬走后下标要重新检查（本层 token 数已变）
+        continue
+
+    return tlist
+
+
 def group(stmt):
     """官方分组 + 本项目补偿。调用方用它替换 ``grouping.group``。"""
     _group_interval_literals(stmt)  # 必须在官方分组之前
@@ -482,4 +627,5 @@ def group(stmt):
     _walk(stmt)
     _unabsorb_trailing_comments(stmt)
     _absorb_leading_comments(stmt)
+    _attach_over_to_functions(stmt)
     return stmt

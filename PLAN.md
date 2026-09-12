@@ -396,6 +396,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | 2026-09-12 | **U11 落地，对拍 `5/26` → `14/17`**：①新增 `sqlfmt_ext/whitespace.py::merge_whitespace_runs`；②新增 `sqlfmt_ext/filters/whitespace.py::StripWhitespaceFilter`，在官方 `_stripws()` 之前合并空白段，并换装进 stack（`stack._swap_whitespace_filter`）；③`LayoutPass.process` 入口保留幂等兜底调用。修掉两类问题：`_set_adjacent_ws` 改写错 token（列宽 +1）与官方 `_stripws_identifierlist` 只删 1 个空 token（逗号前残留 1 空格）。8 个用例转正后**重新校准 §4 规则→用例映射**：L3/L6/L7 整条消失，L1 12→8、L2 7→6、A1 6→1。 |
 | 2026-09-12 | 工具整理：`_tmp_cmp.py` 的两侧选项与主套件口径对齐（去掉多传的 `comma_align`、按 `;` 拆分后以空行拼接、支持 `@相对路径` 直接喂 fixture）；`_tmp_*.py` 加入 `.gitignore`（迁移期临时脚本，S7 统一删除）。 |
 | 2026-09-12 | **S5a 落地，对拍 `21/10` → `22/9`**：`policy.MULTIWORD_REGEX` 在 `LATERAL VIEW <白名单 UDTF>` 之后补一条兜底 `(LATERAL\s+VIEW)\b` —— UDTF 不在白名单时（如 `EXPLODE_JSON_ARRAY_JSON`）`lateral`/`view` 会各自成词，`split_words` 的 `LATERAL\s+VIEW` 对两个单词 token 都匹配不上（`match` 是拿整条正则去 search 单个 token 的 normalized），多个 `lateral view` 全被挤在 `from` 行（且旧 fork 靠输入换行侥幸通过，属已知不收敛用例）。→ 转正 `dml/sqltest1_s06`。 |
+| 2026-09-12 | **S5b 分组侧落地（U14）**：新增 `grouping._attach_over_to_functions` —— 官方 `group_functions` 用「下标相邻」判定是否把 `OVER` 并进 `Function`，`)` 与 `over` 之间夹注释时判定失败；补偿把它搬回 `Function` 并还原 fork 的列表项形状（显式 `as rn` 与隐式 `over(…) rn` 两种写法都覆盖）。孤立复现已与期望**逐字节相同**；整条 `cte/sqltest2_s02` 的残差是 **CTE / `create view` 上下文**里同一个列表不展开，属另一根因（入口已写在 §9.3）。两套件无回归：`23/8`、`170/6`。 |
 | 2026-09-12 | **S5c 定性（用户拍板「按 (i) 做」）**：`case` 与首个 `when` 取**同行**口径，`case/sqltest4_s03` 登记为**有意偏离**（`test_parity.DEVIATIONS`：理由 + 对 canonical 的定向变换，**断言**而非 xfail，另加「变换失效即报错」守卫），对拍 `22/9` → **`23/8` + 1 条有意偏离**。**没有改任何 fixture、没动主套件**（s03 的 canonical 同时钉住旧 fork 的输出回归测试，改了主套件立刻红）。§4 新增「对旧 fork 的有意偏离清单」，S7 交付时按此清单向用户交代。 |
 | 2026-09-12 | 按 `improve-agent` 的「历史失败模式 → 指令修订」思路修正 `AGENTS.md`：①修掉事实错误（用例目录 `pytests/` → 实际的 `tests/`，并补上两套件的跑法与门槛）；②补「架构」为迁移期四段流水线（`DialectLexer`→官方分组+补偿→`StripWhitespaceFilter`→`LayoutPass`），旧 fork 标注为仅作 oracle；③新增「硬约束 C1–C5」与两条元规则（**列对齐错乱先怀疑分组**；**结论必须写成最小重现**）；④补诊断工具清单与三个坑（`FilterStack.run` 返回生成器、两实现须分进程、不能比非空白 token 序列）。 |
 | 2026-09-12 | **S4 落地，对拍 `16/15` → `21/10`**（+5：`dml/s01 s02 s04`、`ddl/s03 s06`）：①`grouping.py` 新增 `_pre_wrap_object_name`，官方分组前把 DDL/INSERT 的对象名链预包成 `Identifier`（U12）；②`_SQLCLS` 补 `sql.Parenthesis`，修 `values (…), (…)` 多行值列表不成组；③新增 `_create_guard` + `_flatten_identifier_lists`，复刻 fork 的 CREATE/ALTER「SELECT 前不建列表」守卫并把官方多建的列表摊平；④`_process_parenthesis` 字段列表分支对「首个子列表以注释开头」不再插换行/删空白（注释与 `(` 同行）。主套件保持 `170 passed, 6 xfailed`。`ddl/s01` 残留归 S4c（官方 `group_functions` 的 CREATE+TABLE 早退严于 fork）。 |
@@ -519,35 +520,40 @@ db.tb (user_id, name, age) values (1, 'a', 2);`）：官方树是
 全被挤在 `from` 行。旧 fork 之所以「对」，是因为它靠**输入换行**保留（该用例在
 `_tmp_measure.py` 的确定性压平下不收敛）。→ 转正 `dml/sqltest1_s06`。
 
-**S5b 起点（`cte/sqltest2_s02`，交接信息，未做）**：差异只有一处 —— 期望把
-`ROW_NUMBER()` 与 `over(...)` 分到两行、标识符列表按项展开；本实现把
-`ROW_NUMBER() --` 留在上一行。已定位到**分组口径（U14）**，最小重现：
+**S5b 进行中（2026-09-12）：分组侧已补偿，残差另有根因。**
 
-    select EMPLID as EmpCode, ROW_NUMBER() --\nover(partition by EMPLID order by BGN_DTTM desc) as rn from t
-
-fork 树：`IdentifierList[ Identifier[EMPLID as EmpCode], ',', ws,
-Identifier[ Function[ Identifier[ROW_NUMBER], Parenthesis[()], ws, Comment, Over[...] ] ] ]`
-——**注释与 `Over` 都在 `Function` 内部**（列表因此完整、能按项展开）。
-
-本实现树：`IdentifierList[ Identifier[EMPLID as EmpCode], ',', ws,
-Identifier[Function[ROW_NUMBER()]] ]`，**`ws` + `Comment` + `Identifier[Over[...] as rn]`
-落在列表之外**（注释把列表打断 → `_process_identifierlist` 不展开）。
-
-根因：官方 `group_functions` 判定要不要把 `OVER` 并进 `Function` 用的是**下标相邻**
-（形如 `over_idx - 1 == tidx + 1`），容得下 `)` 与 `over` 之间的**空白**（无注释时本实现
+根因（U14）：官方 `group_functions` 判定要不要把 `OVER` 并进 `Function` 用的是**下标相邻**
+（形如 `over_idx - 1 == tidx + 1`）。容得下 `)` 与 `over` 之间的**空白**（无注释时本实现
 与 fork 完全同形：`Function[Identifier[row_number], Parenthesis, ws, Over]`），
-但**容不下中间的 `Comment`**（多占一个下标）。
+但**容不下中间的 `Comment`**（多占一个下标）→ `OVER` 被留在 `Function` 外面，
+而它前面那个注释随即把外面的 `IdentifierList` 打断（列表不再按项展开）。
 
-可行做法（任选，注意 C1/C2/C3 约束）：
-1. 官方分组**后**做一次靶向合并：在 `Comment` 所在的层找到「`Function`（或包着它的
-   `Identifier`）+ ws + `Comment` + `Identifier[Over ...]`」，把 `Comment` 与 `Over`
-   搬进 `Function.tokens`（重设 `parent` + `_refresh_values`），还原成与 fork 同形。
-   注意 `Over` 现在嵌在另一个 `Identifier` 里，需要把它**取出**（剩下的
-   `Identifier[as, ws, Identifier[rn]]` 是否合法要验证）。
-2. 让注释不落在 `)` 与 `over` 之间（例如把该 `Comment` 提前并进 `Function` 的
-   `Parenthesis` 尾部）—— 需先确认不会又踩到 `_absorb_leading_comments` 的判定。
-建议先按做法 1 试，用 `_tmp_nt.py` / `_tmp_forkidx.py` 对齐两侧树形，再跑
-`_tmp_check.py cte/sqltest2_s02 -v`。
+**已落地**：`sqlfmt_ext/grouping.py::_attach_over_to_functions`（官方分组**后**、
+`_walk`/注释还原**之后**调用；放在 `_walk` 之前会被 `_group_level` 重新归并掉）。
+它做一次靶向搬移，还原 fork 的形状：`Function` 吸收「ws + 注释 + Over」，
+再把「Function + ws + 别名」重新包成同一个列表项（别名两种写法都覆盖：
+显式 `as rn` 与隐式 `over(...)    rn`；后者还要把别名的 ws 一起搬走，
+并把被误建的 `IdentifierList[rn, ',', from]` 摘掉别名后摊平回本层）。
+踩过的坑：`_is_alias` 必须先判 `isinstance(token, sql.Identifier)` 再看 `ttype`
+—— 分组的 `ttype` 是 `None`，先判 `ttype is None` 会把已包成 `Identifier` 的别名漏掉。
+
+**验证**：把该 fixture 的那条 select 单独拿出来跑
+
+    _tmp_cmp.py --new "select EMPLID as EmpCode, ROW_NUMBER() --\nover(partition by EMPLID order by BGN_DTTM desc, /*-*/\n(ifnull(a,0)) asc)    rn       ,\nfrom ODS.PS_HPS_PERS2MDM_VW_001 t1"
+
+输出与期望第 4–8 行**逐字节相同**；两种别名形态的树也与 `_tmp_forkidx.py` 完全同形。
+
+**残差（下一位接手从这里开始）**：整条 fixture 仍差，因为**同样的列表在
+`create view … with … as ( select … )` 上下文里不展开**（本实现 `select EMPLID as EmpCode,
+ROW_NUMBER() --` 挤在一行、`as` 列也没对齐到同一基准），而单独跑就是对的。
+也就是说这与 U14 无关，是**上下文/语句类型相关**的布局路径问题，建议的入口：
+- 该语句 `get_type()` 是 `CREATE`，`_process_parenthesis` 里有
+  `in_xdl_list = self._curr_stmt.get_type() in ("CREATE","INSERT","ALTER")` 分支
+  （`passes/layout.py:247` 起），CTE 体括号是否被误当成「字段定义列表」；
+- 或者 `_process_identifierlist` / `_AlignMixin._align_identifierlist` 在 CREATE 语境下
+  走了不同的偏移/基准。
+另外该 fixture 还有两处**既有**（与本次改动无关）的差异：`create view … as --` 后多一个空行、
+第三个 `--and t1.Rowkey=1` 的缩进。
 
 **S5c 已收（2026-09-12，用户拍板口径）→ 对拍 `22/9` 变 `23/8` + 1 条有意偏离**：
 `case` 与首个 `when` **同行**（`case when b in ('X','Y') then …`），把 `case/sqltest4_s03` 登记为
