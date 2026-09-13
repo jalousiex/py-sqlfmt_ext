@@ -2,8 +2,9 @@
 
 基于官方 `sqlparse` 的 SQL 格式化工具：**不改官方源码**，把团队口径做成一层外挂补偿
 （`sqlfmt_ext/`），固化默认参数，并用回归 / 收敛 / 幂等三类用例钉住输出稳定。
-优先支持 Doris / SelectDB 方言（`dialect="doris"`）；SQL Server 方言（`dialect="sqlserver"`）已适配
-`GO` 批分隔符、`TOP`、`WITH(NOLOCK)`（`[ ]` 标识符官方本就支持）。
+方言优先级：**Doris / SelectDB 最优先 → 其次 MySQL → Oracle / SQL Server 暂缓**。
+`dialect="doris"`（默认）/ `"selectdb"` / `"mysql"` 都在 `sqlfmt_ext/dialects.py` 登记；
+SQL Server（`dialect="sqlserver"`）已适配 `GO` 批分隔符、`TOP`、`WITH(NOLOCK)`，但按优先级暂不再推进。
 
 ## 安装
 
