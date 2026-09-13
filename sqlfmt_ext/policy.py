@@ -36,6 +36,8 @@ join_words = _join_words
 by_words = r"(GROUP|ORDER)\s+BY\b"
 
 # 命中即在关键字前换行；匹配到多词关键字时只取首个单词参与对齐宽度。
+# 这里只放**通用**词：方言专属词（Doris 的 `DISTRIBUTED BY` / `PROPERTIES` 等）在
+# ``dialects.py`` 里声明，由 ``LayoutPass`` 运行时合并进来（见 `PLAN §9.9`）。
 split_words = (
     "FROM",
     _join_words,
@@ -52,13 +54,7 @@ split_words = (
     "EXCEPT",
     "COMMENT",
     "ROLLUP",
-    "PROPERTIES",
-    r"BUILD\s+(IMMEDIATE|DEFERRED)\b",
-    r"\bREFRESH\b",
-    r"\bON\s+(MANUAL|SCHEDULE|COMMIT)\b",
-    r"(DUPLICATE|UNIQUE|AGGREGATE)\b",
-    r"(AUTO\s+)?PARTITION\s+BY\b",
-    r"DISTRIBUTED\s+BY\b",
+    r"\bON\s+COMMIT\b",
     r"\bON",
     r"LATERAL\s+VIEW",
 )

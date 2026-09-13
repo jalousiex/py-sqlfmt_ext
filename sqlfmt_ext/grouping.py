@@ -53,7 +53,11 @@ from sqlparse import tokens as T
 from sqlparse.engine import grouping as official
 from sqlparse.utils import imt
 
-from . import policy
+from . import dialects, policy
+
+# 判「这是不是子句关键字」用的词表：通用词 + **所有**方言的锚点词。
+# 必须取并集而不是「当前方言」——分组形状不该随方言开关变化（见 `dialects.all_split_words`）。
+_CLAUSE_WORDS = tuple(policy.split_words) + dialects.all_split_words()
 
 # 与官方 ``group_identifier_list`` 的判定口径基本一致（含 ``T.Comment``），
 # 仅补一个 ``sql.Parenthesis``：官方 ``sqlcls`` 不含它，于是 ``values (…), (…)``
@@ -579,7 +583,7 @@ def _is_clause_keyword(token):
     if token.ttype is None or token.ttype not in T.Keyword:
         return False
     return bool(
-        token.match(T.Keyword, policy.split_words, regex=True)
+        token.match(T.Keyword, _CLAUSE_WORDS, regex=True)
         or token.match(T.Keyword, policy.join_words, regex=True)
         or token.match(T.Keyword, policy.by_words, regex=True)
     )

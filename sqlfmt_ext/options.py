@@ -7,6 +7,8 @@
 from sqlparse.exceptions import SQLParseError
 from sqlparse.formatter import validate_options as _validate_official
 
+from . import dialects
+
 # 本项目默认格式化参数（与旧实现 sqlfmt.py 的 DEFAULT_OPTIONS 对齐）
 DEFAULT_OPTIONS = {
     "keyword_case": "lower",
@@ -35,6 +37,14 @@ def validate_options(options=None):
     for key in _BOOL_EXTENSIONS:
         if opts[key] not in (True, False):
             raise SQLParseError(f"{key} requires a boolean value")
+
+    # 方言：未知值直接报错（早先会静默走通用路径，拼错方言名不会有任何提示）
+    try:
+        dialects.get_dialect(opts["dialect"])
+    except KeyError as exc:
+        raise SQLParseError(
+            "unknown dialect: {!r}; available: {}".format(opts["dialect"], ", ".join(dialects.available()))
+        ) from exc
 
     opts = _validate_official(opts)
 

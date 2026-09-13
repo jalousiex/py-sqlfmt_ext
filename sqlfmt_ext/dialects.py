@@ -2,83 +2,96 @@
 
 原则
 ----
-- 只用「追加声明」的方式扩展：往官方 ``sqlparse.keywords.SQL_REGEX`` 追加多词
-  token 规则、往 ``AlignedIndentFilter`` 的关键字集合追加换行关键字。
-- 不改写官方已有条目，卸载后行为与官方完全一致。
-- ``dialect=None``（默认）不注册任何东西，保证与官方对齐的基线可比。
+- 只用「追加声明」的方式扩展：往官方分词表追加多词 token 规则、往本项目的换行锚点表
+  追加关键字；不改写官方已有条目。
+- ``dialect=None`` 时**不追加任何东西**，与官方基线可比。
+- **本模块是方言的唯一真身**：分词层（``lexer``）与布局层（``passes/layout``）都到这里取
+  声明，不再各自硬编码白名单（2026-09-13 起，见 `PLAN §9.9`）。
 """
 
 from dataclasses import dataclass
 
-from sqlparse import keywords as _upstream_keywords
-
 
 @dataclass(frozen=True)
 class Dialect:
+    """一个方言的全部声明（声明式，消费方各自取需要的那一项）。"""
+
     name: str
-    extra_regex: tuple = ()  # ((regex, ttype), ...) 追加到 SQL_REGEX 顶部
-    extra_split_words: tuple = ()  # 追加到 AlignedIndentFilter.split_words
-    extra_join_words: tuple = ()
-    extra_by_words: tuple = ()
+    # 是否注入 ``policy`` 的分词补丁（词表 / 多词关键字 / 优先级补丁）
+    lexer_patches: bool = False
+    # 追加到 ``LayoutPass.split_words`` 的换行锚点词（只影响换行，不影响分词）
+    extra_split_words: tuple = ()
     notes: str = ""
 
 
-# Doris/SelectDB 的分区、分布、模型定义关键字：官方没有，按 MySQL 兼容适配。
-# 只声明「需要参与换行的整段关键字」，具体多词合并依赖官方 SQL_REGEX 已合并的 token。
+# --- Doris / SelectDB -------------------------------------------------------
+
+# 官方词表与换行锚点都缺这些「建表模型定义」关键字，按 MySQL 兼容适配。
+# 这里只声明需要参与换行的整段关键字；多词合并仍由 ``policy`` 的分词补丁负责
+# （词没被合并成一个 token 时不必列在这里 —— 单 token 的正则匹配不上多词）。
 _DORIS_SPLIT_WORDS = (
-    r"DISTRIBUTED\s+BY",
-    r"DUPLICATE\s+KEY",
-    r"AGGREGATE\s+KEY",
-    r"UNIQUE\s+KEY",
-    r"PARTITION\s+BY",
-    r"PROPERTIES",
+    "PROPERTIES",
+    r"BUILD\s+(IMMEDIATE|DEFERRED)\b",
+    r"\bREFRESH\b",
+    r"\bON\s+(MANUAL|SCHEDULE)\b",
+    r"(DUPLICATE|UNIQUE|AGGREGATE)\b",
+    r"(AUTO\s+)?PARTITION\s+BY\b",
+    r"DISTRIBUTED\s+BY\b",
 )
 
 _DORIS = Dialect(
     name="doris",
+    lexer_patches=True,
     extra_split_words=_DORIS_SPLIT_WORDS,
     notes="SelectDB 同族；官方缺失，按 MySQL 兼容适配",
 )
 
 DIALECTS = {
-    None: Dialect(name="generic"),
-    "mysql": Dialect(name="mysql"),
+    None: Dialect(name="generic", notes="不追加任何东西，与官方基线可比"),
+    "mysql": Dialect(name="mysql", notes="预留：目前与通用路径一致"),
     "doris": _DORIS,
     "selectdb": Dialect(
         name="selectdb",
-        extra_split_words=_DORIS.extra_split_words,
-        notes="与 doris 同族，共用关键字声明",
+        lexer_patches=True,
+        extra_split_words=_DORIS_SPLIT_WORDS,
+        notes="与 doris 同族，共用声明",
     ),
     "sqlserver": Dialect(
         name="sqlserver",
-        notes="待适配：GO 批处理分隔符、[ ] 标识符、TOP、WITH(NOLOCK) 等",
+        notes="待适配（S8-c）：GO 批分隔符、[ ] 标识符、TOP、WITH(NOLOCK) 等",
     ),
 }
 
-# 已注册的 (dialect_name, regex) 组合，避免重复注入
-_APPLIED = set()
-
 
 def get_dialect(name):
+    """按名字取方言声明；未知方言抛 ``KeyError``（由选项层转成 ``SQLParseError``）。"""
     if name not in DIALECTS:
-        raise KeyError(f"未知方言：{name!r}，可选：{sorted(k for k in DIALECTS if k)}")
+        raise KeyError(name)
     return DIALECTS[name]
 
 
-def apply_dialect(name):
-    """把方言声明注入官方分词表（幂等）。返回对应的 Dialect。"""
-    dialect = get_dialect(name)
-    regex_entries = list(dialect.extra_regex)
-    if regex_entries:
-        for entry in regex_entries:
-            if (dialect.name, entry) in _APPLIED:
-                continue
-            # 追加到顶部，让多词关键字先于单关键字被合并
-            _upstream_keywords.SQL_REGEX.insert(0, entry)
-            _APPLIED.add((dialect.name, entry))
-    return dialect
+def available():
+    """可用方言名（``None`` 用 ``generic`` 表示），用于错误信息。"""
+    return sorted("generic" if k is None else k for k in DIALECTS)
 
 
 def split_words_for(name):
-    """返回该方言追加的 split_words（供 AlignedIndentFilter 子类使用）。"""
+    """该方言追加的换行锚点词（供 ``LayoutPass`` 使用）。"""
     return tuple(get_dialect(name).extra_split_words)
+
+
+def all_split_words():
+    """**所有**方言声明的换行锚点词的并集（按声明序去重）。
+
+    分组补偿层判「这是不是子句关键字」时用（``grouping._is_clause_keyword``）—— 该判断
+    与当前方言无关：无论跑哪种方言，``DISTRIBUTED BY`` 都是子句头，不该被
+    ``_wrap_create_table_calls`` 当成函数调用包起来。若这里只看当前方言，换方言就会让
+    同一段 SQL 的分组形状跟着变（实测：``PROPERTIES`` 漏在并集外时，
+    ``properties (1)`` 被误包成 ``Function``，换行随之消失）。
+    """
+    words = []
+    for dialect in DIALECTS.values():
+        for word in dialect.extra_split_words:
+            if word not in words:
+                words.append(word)
+    return tuple(words)

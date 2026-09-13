@@ -2,17 +2,18 @@
 
 做法是**子类化 + 初始化后追加**，不动官方模块的全局单例，也不改写官方已有条目；
 因此官方升级分词表后，本项目自动继承，只有补丁条目需要维护。
+
+「要不要打补丁」由 ``dialects`` 声明（本项目的单一真身）—— 本模块不再自己维护方言
+白名单（2026-09-13 起，见 `PLAN §9.9`）。
 """
 
 from sqlparse.lexer import Lexer
 
-from . import policy
-
-SUPPORTED_DIALECTS = ("doris", "selectdb")
+from . import dialects, policy
 
 
 class DialectLexer(Lexer):
-    """官方分词表 + Doris/SelectDB 补丁。
+    """官方分词表 + 方言补丁。
 
     ``dialect=None`` 时等同官方 0.6.0 的分词行为。
     """
@@ -24,7 +25,7 @@ class DialectLexer(Lexer):
 
     def default_initialization(self):
         super().default_initialization()
-        if self.dialect not in SUPPORTED_DIALECTS:
+        if not dialects.get_dialect(self.dialect).lexer_patches:
             return
         # 词表：追加查询（命中即返回），不覆盖官方已有键
         self.add_keywords(policy.KEYWORDS_DORIS)

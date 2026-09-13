@@ -19,7 +19,7 @@ from sqlparse import sql
 from sqlparse import tokens as T
 from sqlparse.utils import imt, indent, offset
 
-from .. import policy
+from .. import dialects, policy
 from ..whitespace import merge_whitespace_runs
 from .align import AlignMixin
 
@@ -33,7 +33,6 @@ class LayoutPass(AlignMixin):
 
     join_words = policy.join_words
     by_words = policy.by_words
-    split_words = policy.split_words
 
     def __init__(self, options=None):
         opts = dict(options or {})
@@ -45,6 +44,10 @@ class LayoutPass(AlignMixin):
         self.comma_first = opts.get("comma_first", False)
         self.leading_kwd = "select"
         self._curr_stmt = None
+        # 换行锚点词 = 通用词 + 方言追加词。**必须挂在实例上**：`policy.split_words` 是
+        # 模块级元组，写成类属性就成了导入期快照，方言层后续追加的词永远看不到
+        # （见 `PLAN §9.9`）。
+        self.split_words = tuple(policy.split_words) + dialects.split_words_for(opts.get("dialect", "doris"))
 
     def _flatten_up_to_token(self, token):
         """Yields all tokens up to token but excluding current."""

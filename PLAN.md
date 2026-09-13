@@ -123,7 +123,7 @@ S7 删除 fork 后该 conftest 一并删除。
 
 | 套件 | 命令 | 现状 |
 |---|---|---|
-| 全套件（唯一） | `.venv\Scripts\python.exe -m pytest -q` | `176 passed`（0 failed / 0 xfailed） |
+| 全套件（唯一） | `.venv\Scripts\python.exe -m pytest -q` | `185 passed`（0 failed / 0 xfailed） |
 
 > 迁移期的「主套件（旧 fork）+ 对拍进度条（`tests_migration/`）」两套件已在 S7 随 fork
 > 一起删除（见 §9.4），旧对拍用例并入了 `tests/`。四个门禁（输出回归 / 幂等 / 收敛 / 对拍）
@@ -314,7 +314,9 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | **S9** | 注释断行的结构性口径：跨注释组强制换行 + `ON COMMIT` 白名单结构化 | 收敛门禁 4 xfail → 1 | **175 passed / 1 xfailed** | ✅ 完成（见 §9.6） |
 | **S10** | 「注释保持列 0」判据结构化：收窄到**语句前导注释**，语句尾注释按层级归一 | 收敛门禁 1 xfail → 0 | **176 passed / 0 xfailed** | ✅ 完成（见 §9.7） |
 | **S10-b** | 收尾注释改「按所在层级对齐」；`;` 作为分段终止符**一律顶列 0**（前面不特殊处理） | 口径修订 | **176 passed / 0 xfailed** | ✅ 完成（见 §9.8） |
-| **S8** | 方言层补完（Doris/SelectDB）+ SQL Server 适配 | 方言用例 | — | ⏳ 待做，可并行 |
+| **S8-a** | 方言层收成**单一真身**：`dialects` 登记表 + `lexer`/`LayoutPass`/`grouping` 都从它取；未知方言报错；建 `dialect` topic | 方言用例 | **185 passed** | ✅ 完成（见 §9.9） |
+| **S8-b** | 官方缺失关键字按 **MySQL 兼容**口径追加声明 | 方言用例 | — | ⏳ 待做 |
+| **S8-c** | SQL Server：`GO` 批分隔符、`[ ]` 标识符、`TOP`、`WITH(NOLOCK)` | 方言用例 | — | ⏳ 待做 |
 
 > 对拍列格式：`passed / xfailed`。
 > **L1 的规则要从「依赖输入换行」改成「结构性判定」**：`/*-*/` 与 `--` 强制断行、
@@ -345,7 +347,11 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 6. **更新 `README.md`**。
 7. `pyproject.toml` 保持 `sqlparse>=0.6,<0.7`。
 
-### S7 方言路线
+### S7 方言路线（**旧编号**，内容归 S8）
+
+> **2026-09-13 注**：本表已**过期**。S7a 由 **S8-a** 完成，且真实缺口与当初设想不同 ——
+> 不是「往 `dialects.py` 补声明」，而是「方言层本身是死的」（死代码 + 两套真身 + 未知方言静默降级）。
+> 落地见 `§9.9` / `§9.9.1`；S8-b / S8-c 仍未开工。
 
 | 阶段 | 内容 |
 |---|---|
@@ -413,21 +419,21 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 
 ## 9. 断点续做（下一次会话从这里开始）
 
-> 落盘时间：2026-09-13（S10-b 收工刷新），**S1–S7、S9、S10、S10-b 全部完成**（S7-a~e 五个
-> 提交见 §9.4 末尾，S9 见 §9.6，S10 见 §9.7，S10-b 见 §9.8），
-> **门槛 `pytest -q` → `176 passed`（0 failed / 0 xfailed）**，收敛门禁 `KNOWN_DIVERGENT` **已清空**，
+> 落盘时间：2026-09-13（S8-a 收工刷新），**S1–S7、S9、S10、S10-b、S8-a 全部完成**（S7-a~e 五个
+> 提交见 §9.4 末尾，S9 见 §9.6，S10 见 §9.7，S10-b 见 §9.8，S8-a 见 §9.9），
+> **门槛 `pytest -q` → `185 passed`（0 failed / 0 xfailed）**，收敛门禁 `KNOWN_DIVERGENT` **已清空**，
 > 无遗留偏离清单。
 >
 > **本节是「阶段断点卡」**：每阶段的开工点与残留都记在这里。配合
 > [AGENTS.md](AGENTS.md) 的「**阶段推进协议**」（开工四步 / 收工六步 / 汇报格式）使用。
 >
-> **下一步开工点**：`PLAN §3` 状态表里只剩 **S8（方言补完 Doris/SelectDB → SQL Server）**；
-> 它还没有执行卡，开工前先按 S8 的形态补一张。
+> **下一步开工点**：**S8-b**（官方缺失关键字按 MySQL 兼容口径追加声明）—— 目前只有一条轮廓，
+> 开工前先按 §9.9 的形态补一张执行卡；S8-c（SQL Server）在其后。
 
 ### 9.1 复现当前状态
 
 ```powershell
-.venv\Scripts\python.exe -m pytest -q                   # 门槛：176 passed（0 failed / 0 xfailed）
+.venv\Scripts\python.exe -m pytest -q                   # 门槛：185 passed（0 failed / 0 xfailed）
 .venv\Scripts\python.exe -m pytest -q -k convergence    # 只看收敛门禁（此刻全绿，无 xfail）
 ```
 
@@ -1028,3 +1034,101 @@ print(format_statements("..."))
 
 **回退方式**：`git revert <本阶段提交>` —— `layout.py` 的 ①+② 与一个 fixture 重定，
 纯文本、无不可逆动作。
+
+---
+
+### 9.9 S8-a 执行卡（方言层，2026-09-13 开工）
+
+**背景**：`PLAN §3` 状态表只剩 **S8**。§5 的「S7 方言路线」（旧编号 S7a/b/c，内容归 S8）写的是
+「Doris/SelectDB 声明式注册 → 官方缺失关键字按 MySQL 兼容追加 → SQL Server 适配」。
+**但勘测发现真实缺口不在「补词表」，而在「方言层本身是死的」**（下表全部实测）。
+
+**勘测结论**：
+
+| # | 缺口 | 证据 |
+|---|---|---|
+| 1 | `dialects.py` **零调用**（`apply_dialect` / `split_words_for` / `get_dialect` / `DIALECTS` 无任何消费方）；其 `extra_split_words` 与 `policy.split_words` **重复声明**且从未被读 | 全仓 grep 只命中 `dialects.py` 自身与 `PLAN` 历史段 |
+| 2 | **两套真身**：`lexer.SUPPORTED_DIALECTS = ("doris","selectdb")`（硬编码）vs `dialects.DIALECTS`（还含 `None`/`mysql`/`sqlserver`）→ 表里声明的方言**运行时不存在** | `dialect="mysql"` / `"sqlserver"` 的输出与 `dialect=None` **逐字节相同** |
+| 3 | **未知方言静默降级**：`dialect="typo"` 不报错，直接走通用路径（拼错即静默换方言） | 同上探针 |
+| 4 | **零方言 fixture**：`TOPIC_META` 无 `dialect` topic、`cases/` 无方言 SQL → 没有验收通道 | —— |
+| 5 | Doris 锚点词**其实已生效**（`policy.split_words` 里本就有 `DISTRIBUTED BY` / `(DUPLICATE\|UNIQUE\|AGGREGATE)` / `PARTITION BY` / `PROPERTIES` / `BUILD` / `REFRESH` / `ON …`），只是**注册在 `policy` 而非 `dialects`** | `dialect="doris"` 下 `duplicate key…` / `distributed by …` / `properties …` 各自独占一行 ✓ |
+
+> **修正一条旧勘测**：先前记的「`extra_split_words` 声明了没人消费 → 往 `policy.split_words`
+> 追加不生效」只说对了一半 —— **词确实生效**（它们本来就在 `policy.split_words` 里），
+> **不生效的是 `dialects.py` 那份重复声明**（另：`layout.py:36` 的类属性确实是导入期快照，
+> 但因为是"快照同一个对象"，所以没暴露问题）。
+
+**本轮（S8-a）目标**：把「方言」从**装饰性模块**变成**真开关**，并给它建验收通道。
+
+1. **单一真身**：`dialects.DIALECTS` 作为唯一方言登记表；`lexer` 删掉硬编码的 `SUPPORTED_DIALECTS`，
+   改为向 `dialects` 查询（方言是否存在 + 要不要打分词补丁）。
+2. **未知方言报错**：`options.validate_options` 用 `dialects` 校验 → `dialect="typo"` 抛
+   `SQLParseError`，不再静默降级。
+3. **让声明通道变活**：`Dialect.extra_split_words` 由 `LayoutPass` **消费**（实例属性，
+   替代 `layout.py:36` 的导入期类属性快照）；`policy.split_words` 只留**通用**词，
+   Doris 专属词移进 `dialects` 声明。
+4. **验收通道**：新建 `tests/fixtures/cases/dialect/` + `TOPIC_META["dialect"]`
+   （topic 级 `options={"dialect": "doris"}`，`_build_case` 已支持，见 `sql_cases.py:71`）。
+   用例要能证明**开关真的起作用**：同一 SQL 在 `dialect=None` 下**不触发** Doris 专属换行。
+
+**验收**：
+
+- `.venv\Scripts\python.exe -m pytest -q` → 原有 176 项**一项不变**（默认仍是 `doris`，
+  词表归属搬家不影响输出），另加新增 `dialect/*` 用例；
+- 同一条 Doris DDL：`dialect="doris"` 与 `dialect=None` 的输出**不同**（开关生效）；
+- `dialect="typo"` 抛 `SQLParseError`。
+
+**风险 / 雷区**：
+
+- 现有 fixture **全部**用默认 `doris`（`FILE_OPTIONS` 只有 `align_list` / `comma_first`）→
+  词表搬家理论上不碰它们，但**必须全量跑门禁**确认。
+- `ON COMMIT` 属**通用** DDL（`ddl/sqltest0_s04` 依赖它，`_normalize_newlines` 的 `keep_newline`
+  白名单也按它写死）→ 搬词时**必须把它留在通用表**，只把 `ON MANUAL` / `ON SCHEDULE` 归 Doris。
+- `LayoutPass.split_words` 从类属性改实例属性后，`_next_token` / `_split_kwds` / `_process_comment`
+  里都必须走 `self.split_words`（已确认无类级直接引用），改完要复查一遍。
+
+**回退方式**：`git revert <本阶段提交>` —— `dialects.py` / `lexer.py` / `options.py` / `layout.py` /
+`policy.py` 五处文本改动 + 新增 `cases/dialect/` 与 `TOPIC_META` 一行；纯文本、无不可逆动作。
+**S8-b（MySQL 兼容追加）/ S8-c（SQL Server）不在本轮**，本轮做完再各自开卡。
+
+#### 9.9.1 S8-a 已收（2026-09-13）
+
+**改动**（7 个文件）：
+
+| 文件 | 改动 |
+|---|---|
+| `dialects.py` | 重写为**单一真身**：`Dialect(name, lexer_patches, extra_split_words, notes)`；Doris 的 7 个换行锚点词在 `_DORIS_SPLIT_WORDS` 中声明；删掉真死代码（`apply_dialect` / `_APPLIED` / 往官方 `SQL_REGEX` 注入）；新增 `available()` 与 `all_split_words()` |
+| `lexer.py` | 删硬编码的 `SUPPORTED_DIALECTS`，改问 `dialects.get_dialect(...).lexer_patches` |
+| `options.py` | 方言校验：未知方言抛 `SQLParseError`（并列出可用值），不再静默降级 |
+| `layout.py` | `split_words` 从**类属性（导入期快照）**改为**实例属性** = `policy.split_words + dialects.split_words_for(dialect)` |
+| `policy.py` | `split_words` 只留**通用**词，Doris 专属词移入 `dialects`；`ON COMMIT` 收窄为 `\bON\s+COMMIT\b`（它属通用 DDL，`ddl/sqltest0_s04` 依赖） |
+| `grouping.py` | `_is_clause_keyword` 的词表由 `policy.split_words` 换成 `_CLAUSE_WORDS` = 通用词 + **所有**方言锚点词的并集 |
+| `tests/` | 新增 `fixtures/cases/dialect/sqltest0_s01.sql`（Doris 建表，实跑输出定稿）+ `TOPIC_META["dialect"]` + `test_sqlfmt_dialect.py`（4 条断言） |
+
+**本次最重要的发现（根因 + 教训）**：搬词后 `properties (1);` 突然与 `distributed by hash(id)` 挤到
+同一行。顺序对照实验（把 `PROPERTIES` 手动放回 `policy.split_words` 开头即恢复）指向**分组层**：
+
+> `grouping._is_clause_keyword` 硬引用 `policy.split_words` 判「这是不是子句关键字」。词搬走后
+> `PROPERTIES` 不再被认作子句头 → `_wrap_create_table_calls`（U13）把它当函数名，把
+> `properties (1)` 包成 `Function` → `_split_kwds` 在**本层**再也看不到这个 Keyword（不递归进子组）
+> → 换行消失。
+
+**教训（可复用）**：换行锚点词有**两个消费方** —— 布局层（要不要换行）与**分组层**（是不是子句头）。
+分组层那个**必须与方言无关**（取所有方言的并集）：否则**换方言会连带改变分组形状**，表现为
+「开关一动，整条 SQL 的结构都变」。与元规则一「列对齐错乱先怀疑分组」同源。
+
+**验收**：`.venv\Scripts\python.exe -m pytest -q` → **`185 passed`（0 failed / 0 xfailed）**。
+
+- 原 176 项**一项没动**（默认方言仍是 `doris`，词表归属搬家不影响输出）；
+- 新增 9 项：`dialect/sqltest0_s01` 进三个门禁（输出回归 / 幂等 ×2 / 收敛）+ `test_sqlfmt_dialect.py` 4 条；
+- 开关证据：同一条 Doris DDL，`dialect="doris"` 与 `dialect=None` 输出**不同**（后者与输入逐字节相同）；
+- `dialect="typo"` → `SQLParseError: unknown dialect: 'typo'; available: doris, generic, mysql, selectdb, sqlserver`。
+
+**残留 / 下一步**：
+
+- `mysql` / `sqlserver` 目前只是**登记**（`lexer_patches=False`、无锚点词）→ 行为等同通用。
+  S8-b 补 MySQL 兼容声明，S8-c 补 SQL Server（`GO` / `[ ]` / `TOP` / `WITH(NOLOCK)`）。
+- `LATERAL VIEW` 仍留在**通用**词表（generic 下因分词层不合并而天然不生效），未按方言拆分 ——
+  暂按「本项目通用增强」处理，S8-b 再评估。
+
+**回退方式**：`git revert <本阶段提交>`（7 处文本改动 + 新增 topic/测试；纯文本、无不可逆动作）。
