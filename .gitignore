@@ -1,12 +1,22 @@
-﻿.*
+﻿# Python
 __pycache__/
-logs/
-output/
-_tmp_*
 
+# IDE
+.*/
 !.vscode/
-
-# .claude 是本地资产，只放行「计划真身」目录，使其随仓库走
 !.claude/
-.claude/*
-!.claude/plan/
+# 产品运行时数据（个人本地，不入库）
+.claude/settings.local.json
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# Environment
+.env
+
+# Job Output
+output/
+
+_tmp_*

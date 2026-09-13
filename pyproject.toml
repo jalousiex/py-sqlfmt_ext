@@ -1,10 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "py-sqlfmt"
+name = "sqlfmt_ext"
 version = "0.1.0"
 description = "基于官方 sqlparse 的 SQL 格式化外挂层（Doris/SelectDB 优先）"
 readme = "README.md"
 requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
 dependencies = ["sqlparse>=0.6,<0.7"]
+
+[project.scripts]
+sqlfmt_ext = "sqlfmt_ext.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["sqlfmt_ext*"]
 
 [tool.pytest.ini_options]
 # 只有一套测试（fixture 输出回归 + 收敛 + 幂等 + 用例完整性）。

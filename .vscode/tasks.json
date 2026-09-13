@@ -1,0 +1,63 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "安装：可编辑到项目 .venv",
+			"type": "process",
+			"command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+			"args": [
+				"-m",
+				"pip",
+				"install",
+				"-e",
+				"."
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": "none"
+		},
+		{
+			"label": "构建：打 wheel",
+			"type": "process",
+			"command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+			"args": [
+				"scripts/build_package.py"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "部署：装到主环境（脱开 venv）",
+			"type": "process",
+			"command": "${config:sqlfmt.mainEnvPython}",
+			"args": [
+				"scripts/install_to_main.py"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "测试：门禁 pytest",
+			"type": "process",
+			"command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+			"args": [
+				"-m",
+				"pytest",
+				"-q"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": "test"
+		}
+	]
+}

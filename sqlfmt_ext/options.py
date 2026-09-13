@@ -9,7 +9,7 @@ from sqlparse.formatter import validate_options as _validate_official
 
 from . import dialects
 
-# 本项目默认格式化参数（与旧实现 sqlfmt.py 的 DEFAULT_OPTIONS 对齐）
+# 本项目默认格式化参数（沿用已下线的根 sqlfmt.py 入口那份口径，逐项未变）
 DEFAULT_OPTIONS = {
     "keyword_case": "lower",
     "indent_width": 4,

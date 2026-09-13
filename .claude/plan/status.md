@@ -1,4 +1,4 @@
-# 状态 — py-sqlfmt 阶段状态与门槛
+# 状态 — sqlfmt_ext 阶段状态与门槛
 
 > 本文件是**门槛数字的唯一真身**：别处（`AGENTS.md` / `README.md` / `MEMORY.md` / 技能）
 > 一律只写命令 + 指向本文件。阶段**过程**（靶子 / 根因 / 证据 / 残留）在 `stages.md`。
@@ -48,6 +48,12 @@
 | **S14** | 官方判成 `Keyword` 的类型名按方言声明进 DDL 类型列（不改官方词表） | 259 passed | ✅ |
 | **S15** | 泛型尖括号：`map<string, int>` 的实参逗号不再是 DDL 字段分隔符 | 264 passed | ✅ |
 | **S16** | `ON` 锚点补后缀词边界（`ONLY` / `ONLINE` 不再被当成子句头） | 269 passed | ✅ |
+| **E1** | 工程化：入口收进 `sqlfmt_ext/cli.py`、下线根 `sqlfmt.py`、项目与发行名统一为 `sqlfmt_ext`、`-e` 与 wheel 双环境 + 构建/部署脚本 | 269 passed | ✅ |
+
+**E1（工程化）不涉及格式化逻辑**，门槛与 S16 相同（`269 passed`）；它换的是入口与打包形态：
+命令入口为 `sqlfmt_ext`（`sqlfmt_ext/cli.py:main`，`python -m sqlfmt_ext.cli` 等价），双环境模型是
+「项目 `.venv` 可编辑装源码（调试 / 门禁）+ 主环境 `pythoncore-3.14-64` 装 wheel（日常使用）」，
+脚本见 `scripts/build_package.py` / `scripts/install_to_main.py`，VSCode 任务见 `.vscode/tasks.json`。
 
 **方言路线（S8-a → S8-d）已走完**：Doris / SelectDB（最优先）与 MySQL 已适配；
 SQL Server 已完成并保留、**不回退也不再往前推**（用户口径）；Oracle 未开工。

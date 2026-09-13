@@ -1,7 +1,7 @@
-"""token 间隔空白的确定性改写（**不导入 `sqlfmt`**，两侧实现共用）。
+"""token 间隔空白的确定性改写（**本模块不导入任何入口/实现包**，两侧实现共用）。
 
 从 `tests/sqlfmt_test_helpers.py` 抽出：迁移期新实现（`sqlfmt_ext`）的门禁要复用同一套
-「压平/打乱」口径，而 helper 模块顶部 `import sqlfmt` 会把旧 fork 一起拖进来。
+「压平/打乱」口径，而 helper 模块顶部导入旧入口会把旧 fork 一起拖进来。
 本模块只依赖 `sqlparse.lexer` / `sqlparse.tokens`（两套实现各自会话里加载的那一个）。
 """
 

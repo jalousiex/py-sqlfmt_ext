@@ -1,4 +1,4 @@
-# PLAN — py-sqlfmt 计划大纲
+# PLAN — sqlfmt_ext 计划大纲
 
 > **本目录是计划的唯一真身**（原根目录 `PLAN.md` 于 2026-09-13 拆分到此）。
 > 定位：官方 `sqlparse` 之上的小侵入**外挂层**（`sqlfmt_ext/`，不改官方源码）。
@@ -92,7 +92,7 @@ sql
 | `sqlfmt_ext/whitespace.py` | 空白段合并（U11，供 `filters/whitespace.py` 在官方 strip 前调用） | 官方 |
 | `sqlfmt_ext/passes/layout.py` | 断行骨架 + 缩进宽度（唯一换行决策处） | 官方 |
 | `sqlfmt_ext/passes/align.py` | 同行空白宽度（列对齐规则集，mixin） | 官方 |
-| `sqlfmt.py` | 薄 shim：`DEFAULT_OPTIONS` + CLI，转发到 `sqlfmt_ext` | `sqlfmt_ext` |
+| `sqlfmt_ext/cli.py` | CLI 入口：`sqlfmt_ext` 命令与 `python -m sqlfmt_ext.cli` 共用同一份 main | `sqlfmt_ext` |
 
 ---
 

@@ -1,4 +1,4 @@
-# py-sqlfmt
+# sqlfmt_ext
 
 基于官方 `sqlparse` 的 SQL 格式化工具：**不改官方源码**，把团队口径做成一层外挂补偿
 （`sqlfmt_ext/`），固化默认参数，并用回归 / 收敛 / 幂等三类用例钉住输出稳定。
@@ -11,24 +11,47 @@ SQL Server（`dialect="sqlserver"`）已适配 `GO` 批分隔符、`TOP`、`WITH
 ## 安装
 
 ```bash
-pip install -e .          # 依赖 sqlparse>=0.6,<0.7（见 pyproject.toml）
+# 开发环境（本仓库内）：可编辑安装，改代码即时生效
+python -m pip install -r requirements-dev.txt
+
+# 使用环境：装发布物（wheel），与开发环境隔离
+pip install sqlfmt_ext-0.1.0-py3-none-any.whl
 ```
+
+运行依赖 `sqlparse>=0.6,<0.7` 见 `pyproject.toml`，安装时自动解析。
 
 ## 使用
 
 ```bash
+# 无参数：打印用法（选项一览）
+sqlfmt_ext
+
 # 格式化单文件（输出到 stdout）
-python sqlfmt.py path/to/file.sql
+sqlfmt_ext path/to/file.sql
 
 # 递归格式化目录
-python sqlfmt.py path/to/sql-dir
+sqlfmt_ext path/to/sql-dir
 
 # 原地回写
-python sqlfmt.py path/to/file.sql --in-place
+sqlfmt_ext path/to/file.sql --in-place
+
+# 不依赖 PATH 的等价写法（与上面同一个 main，三种写法等价）
+python -m sqlfmt_ext path/to/file.sql
+python -m sqlfmt_ext.cli path/to/file.sql
 
 # 库内调用
 python -c "from sqlfmt_ext import format_statements; print(format_statements('select 1'))"
 ```
+
+### DBeaver 外部格式化程序
+
+| 栏 | 填 |
+|------|------|
+| 程序 | `…\pythoncore-3.14-64\Scripts\sqlfmt_ext.exe` |
+| 参数 | `${file}` |
+
+也可用 `python.exe` + 参数 `-m sqlfmt_ext.cli ${file}`（不依赖 PATH 与 exe 落点）。
+结果走 stdout、由 DBeaver 回填编辑器，**不要加 `--in-place`**。
 
 ## 测试
 
@@ -40,13 +63,39 @@ python -m pytest -q
 幂等性（二次格式化不变）、方言开关，另加选项行为（`comma_first` / `align_list`）与布局变体的定向用例。
 **当前门槛数字与阶段状态见 `.claude/plan/status.md`**（本项目门槛数字的唯一真身）。
 
+## 构建与发布
+
+```bash
+# 打主包 wheel → scripts/output/wheels/wheelhouse/<名>-<版本>/
+python scripts/build_package.py
+
+# 连依赖一起打成离线 ZIP（内网 / 无源环境分发）
+python scripts/build_package.py --with-deps
+
+# 指定新版本号（同时改写 pyproject.toml 的 version）
+python scripts/build_package.py 0.1.1
+
+# 把最新构建物装进主环境
+# 默认取 SQLFMT_MAIN_PYTHON 或 %LOCALAPPDATA%\Python\pythoncore-3.14-64
+python scripts/install_to_main.py
+```
+
+VSCode 任务：`安装：可编辑到项目 .venv` / `构建：打 wheel` / `部署：装到主环境（脱开 venv）` / `测试：门禁 pytest`。
+部署任务用 `"type": "process"` 且直接取 `.vscode/settings.json` 里 `sqlfmt.mainEnvPython` 指定的解释器
+（不经 shell、不走 PATH），因此**不受当前激活的 .venv 影响**；换机器只改这一个配置键。
+
+发布到源（预留，尚未执行）：拿到 wheel 后上传到目标源 —— 官方源可 `python -m twine upload dist/*.whl`，
+内网源则把 wheel（连同 `--with-deps` 拉到的依赖）放进源目录。
+
 ## 目录
 
 | 路径 | 说明 |
 |------|------|
-| `sqlfmt.py` | CLI 入口（薄壳：默认参数 + 读取/回写文件） |
+| `sqlfmt_ext/cli.py` | CLI 入口（`sqlfmt_ext` 命令与 `python -m sqlfmt_ext.cli` 共用同一份 main） |
 | `sqlfmt_ext/` | 补偿层：官方 filter 的替换/追加 + 本项目 pass（分组、布局、对齐、分词兜底） |
+| `scripts/` | 构建与部署：`build_package.py`（出 wheel / 离线 ZIP）、`install_to_main.py`（装进主环境） |
 | `tests/` | pytest 测试与 SQL 夹具（`tests/fixtures/cases/<topic>/*.sql`） |
+| `requirements-dev.txt` | 开发依赖（pip / build / pytest + `-e .`） |
 | `.claude/rules/` | 阶段推进协议（开工四步 / 阶段内铁律 / 收工六步 / 汇报格式） |
 | `.claude/plan/` | **计划真身**：大纲 / 状态 / 阶段卡 / 差异 / 归档（见下表） |
 
@@ -72,7 +121,7 @@ python -m pytest -q
 ### 架构概要
 
 ```text
-sqlfmt.py → sqlfmt_ext.format_statements()
+sqlfmt_ext.cli → sqlfmt_ext.format_statements()
   → 方言批切分（仅当 batch_separator 非空，如 sqlserver 的 GO）
   → 官方 lexer.tokenize()        # 正则分词（DialectLexer 追加方言词表 / 优先级规则）
   → 官方 StatementSplitter       # 按 ; 分割语句
@@ -87,7 +136,7 @@ sqlfmt.py → sqlfmt_ext.format_statements()
 
 ### 关键文件
 
-- `sqlfmt.py` — CLI 入口；`sqlfilefmt()` 拆分语句后逐条格式化，`.strip()` 后用 `\n\n` 拼接
+- `sqlfmt_ext/cli.py` — CLI 入口；`format_statements()` 拆分语句后逐条格式化，`.strip()` 后用 `\n\n` 拼接
 - `sqlfmt_ext/passes/layout.py` — 核心布局：`_process()` **按组类名分发**（`_process_{cls}`），
   所以任何「把括号包进别的组」的补偿都会改变这里收到的组
 - `sqlfmt_ext/passes/align.py` — 列对齐（`_identifier_layouts` / `_create_field_lines`）

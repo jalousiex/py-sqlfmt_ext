@@ -1,9 +1,9 @@
 ﻿import os
 
-import sqlfmt
+from sqlfmt_ext import format_statements
 from tests.fixtures.sql_cases import SQL_CASES, normalize_sql
 
-# 空白改写（压平/打乱）已抽到 `tests/fixtures/whitespace.py`：那边**不导入 sqlfmt**，
+# 空白改写（压平/打乱）已抽到 `tests/fixtures/whitespace.py`：那边**不导入入口模块**，
 # 迁移期新实现（`sqlfmt_ext`）的门禁才能复用同一口径。这里保持对外名字不变。
 from tests.fixtures.whitespace import (  # noqa: F401
     SCRAMBLE_SEPARATORS,
@@ -13,13 +13,13 @@ from tests.fixtures.whitespace import (  # noqa: F401
 
 
 def format_with_entry_defaults(sql_text: str) -> str:
-    # 使用 sqlfmt 入口函数默认行为进行格式化。
-    return normalize_sql(sqlfmt.sqlfilefmt(sql_text))
+    # 使用入口默认行为进行格式化（与旧 sqlfmt.sqlfilefmt 的默认口径逐项一致）。
+    return normalize_sql(format_statements(sql_text))
 
 
 def format_with_options(sql_text: str, **options) -> str:
     """使用自定义选项进行格式化。"""
-    return normalize_sql(sqlfmt.sqlfilefmt(sql_text, **options))
+    return normalize_sql(format_statements(sql_text, options))
 
 
 def case_expected(case) -> str:

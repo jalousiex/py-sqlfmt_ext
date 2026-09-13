@@ -1,4 +1,4 @@
-# AGENTS.md — py-sqlfmt AI 指令
+# AGENTS.md — sqlfmt_ext AI 指令
 
 官方 `sqlparse` 之上的小侵入**外挂层**（不改官方源码）。
 **唯一目的：格式化结果更美观、符合个人习惯** —— 外挂层 / 收敛性 / 幂等性都是手段。

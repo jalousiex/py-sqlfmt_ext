@@ -1,4 +1,4 @@
-"""py-sqlfmt：基于官方 sqlparse 的 SQL 格式化外挂层。
+"""sqlfmt_ext：基于官方 sqlparse 的 SQL 格式化外挂层。
 
 设计原则
 --------
@@ -11,8 +11,23 @@
    只用「追加声明」的方式注册，不修改官方分词表。
 """
 
-from sqlfmt_ext.options import DEFAULT_OPTIONS, validate_options
-from sqlfmt_ext.stack import build_stack, format_sql, format_statements
+import sys
+
+try:
+    from sqlfmt_ext.options import DEFAULT_OPTIONS, validate_options
+    from sqlfmt_ext.stack import build_stack, format_sql, format_statements
+except ModuleNotFoundError as _exc:
+    # 依赖缺失时给出「缺什么 / 怎么装」，别让调用方对着裸 ModuleNotFoundError 猜。
+    # 护栏只能放在包入口（不是 cli.py）：`sqlfmt_ext` 命令与 `python -m sqlfmt_ext.cli`
+    # 都会先导入本包，失败发生在入口代码执行之前。
+    if (_exc.name or "").split(".")[0] == "sqlparse":
+        raise ModuleNotFoundError(
+            "缺少依赖：sqlparse（本项目要求 >=0.6,<0.7）\n"
+            f'  安装依赖  ："{sys.executable}" -m pip install "sqlparse>=0.6,<0.7"\n'
+            f'  安装本项目："{sys.executable}" -m pip install .\n'
+            "  或用项目自带虚拟环境的解释器（<项目>/.venv/Scripts/python.exe）"
+        ) from _exc
+    raise
 
 __all__ = [
     "DEFAULT_OPTIONS",
