@@ -124,3 +124,77 @@ def test_sqlserver_splits_batches_on_go():
     assert format_with_options("select 1; go\nselect 2;", dialect="sqlserver") == "select 1;\nGO\n\nselect 2;"
     # `dialect=None` 没有批概念 → `go` 被当成普通词胶进上一句
     assert format_with_options("select 1\nGO\nselect 2", dialect=None) == "select 1 go\n\nselect 2"
+
+
+# --- S8-d：MySQL 方言（类型名 / 表选项 / ON DUPLICATE KEY UPDATE）-----------------
+
+MYSQL_TYPES_DDL = "create table t (id bigint, content mediumtext, data longblob, created_at datetime);"
+
+MYSQL_TYPES_EXPECTED = (
+    "create table t (\n"
+    "       id         bigint    ,\n"
+    "       content    mediumtext,\n"
+    "       data       longblob  ,\n"
+    "       created_at datetime\n"
+    ");"
+)
+
+
+def test_mysql_type_names_keep_ddl_columns_aligned():
+    """MySQL 类型名必须与字段名分开，否则 DDL 的类型列取不到 token（U16 同机理）。
+
+    `mediumtext` / `longblob` / `datetime` 都不在官方词表里 → 落普通 `Name`，被
+    `group_identifier` 与字段名粘成一个 `Identifier`：`content mediumtext` 挤进同一列。
+    """
+    assert format_with_options(MYSQL_TYPES_DDL, dialect="mysql") == MYSQL_TYPES_EXPECTED
+    generic = format_with_options(MYSQL_TYPES_DDL, dialect=None)
+    assert generic != MYSQL_TYPES_EXPECTED
+    assert "content mediumtext" in generic
+
+
+MYSQL_OPTIONS_DDL = "create table t (id int) engine=innodb default charset=utf8mb4 comment='表';"
+
+MYSQL_OPTIONS_EXPECTED = (
+    "create table t (id int)\n"
+    "engine = innodb\n"
+    "default charset = utf8mb4\n"
+    "comment = '表';"
+)
+
+
+def test_mysql_table_options_each_start_a_line():
+    """`)` 之后的表选项各自成行（与 Doris 的 `duplicated by` / `properties` 同形）。
+
+    `dialect=None` 下它们全挤在 `)` 之后，换行只是 `wrap_after` 撞出来的。
+    """
+    assert format_with_options(MYSQL_OPTIONS_DDL, dialect="mysql") == MYSQL_OPTIONS_EXPECTED
+    assert format_with_options(MYSQL_OPTIONS_DDL, dialect=None) != MYSQL_OPTIONS_EXPECTED
+
+
+MYSQL_UPSERT = "insert into t (a, b) values (1, 2) on duplicate key update b = values(b);"
+
+
+def test_mysql_on_duplicate_key_update_stays_inline():
+    """`ON DUPLICATE KEY UPDATE` 必须并成一个多词关键字，且 `b = values(b)` 不被拆行。
+
+    `values` 是**通用**换行锚点，不看邻接就会把赋值右值甩到下一行 → `_split_kwds` 用
+    「锚点紧跟 `=` 时不换行」这条结构性判据兜住（与本方言无关）。
+    """
+    mysql = format_with_options(MYSQL_UPSERT, dialect="mysql")
+    assert "on duplicate key update b = values(b);" in mysql
+    generic = format_with_options(MYSQL_UPSERT, dialect=None)
+    # 未合并时 `duplicate` 落 `Name`，整段被切成两行
+    assert "on duplicate key\n" in generic
+    assert "on duplicate key update" not in generic
+
+
+def test_straight_join_right_after_select_is_a_modifier():
+    """`SELECT` 后紧跟的锚点词是 select 修饰符，不换行（结构性判据，与方言无关）。
+
+    `straight_join` 同时是 join 关键字（`policy._join_words` 就是靠 `JOIN\\b` 命中它的），
+    仅看词表分不出「修饰符」与「join 运算符」两种用法，只能看它前面是不是 `SELECT`。
+    """
+    sql = "select straight_join a.id, a.name from t1 a where a.st = 1;"
+    expected = "select straight_join a.id  ,\n                     a.name\n  from t1 a\n where a.st = 1;"
+    assert format_with_options(sql, dialect="mysql") == expected
+    assert format_with_options(sql, dialect=None) == expected

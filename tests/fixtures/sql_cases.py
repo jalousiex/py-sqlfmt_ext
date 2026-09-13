@@ -36,6 +36,7 @@ TOPIC_META = {
     # 方言用例：topic 级 options 让整组跑在指定方言上（`_build_case` 支持 topic 级 options）
     "dialect": {"label": "方言", "tags": ("dialect", "short", "split"), "options": {"dialect": "doris"}},
     "sqlserver": {"label": "方言（SQL Server）", "tags": ("sqlserver", "short", "split"), "options": {"dialect": "sqlserver"}},
+    "mysql": {"label": "方言（MySQL）", "tags": ("mysql", "short", "split"), "options": {"dialect": "mysql"}},
 }
 
 

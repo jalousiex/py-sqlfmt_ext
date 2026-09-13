@@ -3,7 +3,8 @@
 基于官方 `sqlparse` 的 SQL 格式化工具：**不改官方源码**，把团队口径做成一层外挂补偿
 （`sqlfmt_ext/`），固化默认参数，并用回归 / 收敛 / 幂等三类用例钉住输出稳定。
 方言优先级：**Doris / SelectDB 最优先 → 其次 MySQL → Oracle / SQL Server 暂缓**。
-`dialect="doris"`（默认）/ `"selectdb"` / `"mysql"` 都在 `sqlfmt_ext/dialects.py` 登记；
+`dialect="doris"`（默认）/ `"selectdb"` 已适配 Doris 建表模型定义词与类型名；
+`dialect="mysql"` 已适配建表类型名、表选项换行、`ON DUPLICATE KEY UPDATE`；
 SQL Server（`dialect="sqlserver"`）已适配 `GO` 批分隔符、`TOP`、`WITH(NOLOCK)`，但按优先级暂不再推进。
 
 ## 安装
@@ -97,7 +98,7 @@ sqlfmt.py → sqlfmt_ext.format_statements()
   （`xfail(strict=True)` 会在修好时主动报错提示）
 - 仓库根 `conftest.py` 会校验 `sqlparse.__file__` 来自 site-packages —— 防止「仓库内 vendored 包
   遮蔽官方包」的老问题复发
-- 门槛：**`215 passed`（0 failed / 0 xfailed）**；收敛门禁 `KNOWN_DIVERGENT` 已清空
+- 门槛：**`234 passed`（0 failed / 0 xfailed）**；收敛门禁 `KNOWN_DIVERGENT` 已清空
 
 ### 默认格式化参数
 

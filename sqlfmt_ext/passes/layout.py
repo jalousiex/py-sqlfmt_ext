@@ -912,6 +912,24 @@ class LayoutPass(AlignMixin):
 
         return True
 
+    @staticmethod
+    def _is_expression_anchor(tlist, tidx):
+        """锚点词是否落在「表达式内部」——是则不该作为行首关键字换行。
+
+        两个**结构性**判据（只看 token 邻接，不看输入空白，满足 C4）：
+
+        * 紧跟 ``SELECT``：它是 select 修饰符，不是子句头（MySQL 的 ``SELECT
+          STRAIGHT_JOIN …``；``straight_join`` 同时是 join 关键字，仅靠词表分不开）；
+        * 紧跟 ``=``：它是赋值右值里的函数名（MySQL 的 ``ON DUPLICATE KEY UPDATE
+          b = VALUES(b)``；``values`` 是通用锚点，不看邻接就会把右值拆到下一行）。
+        """
+        _, prev_ = tlist.token_prev(tidx, skip_ws=True)
+        if prev_ is None:
+            return False
+        if prev_.ttype in T.DML and prev_.normalized == "SELECT":
+            return True
+        return prev_.ttype in T.Operator and prev_.value == "="
+
     def _split_kwds(self, tlist):
         # 遍历关键字, _next_token查找匹配T.Keyword,self.split_words的关键字token
         tidx, token = self._next_token(tlist)
@@ -933,6 +951,11 @@ class LayoutPass(AlignMixin):
                     tidx += 1
                 # FROM 后若已存在换行，折叠为单空格
                 self._pull_inline(tlist, token, after=True)
+                tidx, token = self._next_token(tlist, tidx)
+                continue
+
+            # 锚点词落在表达式内部（select 修饰符 / 赋值右值）时不换行
+            if self._is_expression_anchor(tlist, tidx):
                 tidx, token = self._next_token(tlist, tidx)
                 continue
 

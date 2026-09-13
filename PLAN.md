@@ -123,7 +123,7 @@ S7 删除 fork 后该 conftest 一并删除。
 
 | 套件 | 命令 | 现状 |
 |---|---|---|
-| 全套件（唯一） | `.venv\Scripts\python.exe -m pytest -q` | `215 passed`（0 failed / 0 xfailed） |
+| 全套件（唯一） | `.venv\Scripts\python.exe -m pytest -q` | `234 passed`（0 failed / 0 xfailed） |
 
 > 迁移期的「主套件（旧 fork）+ 对拍进度条（`tests_migration/`）」两套件已在 S7 随 fork
 > 一起删除（见 §9.4），旧对拍用例并入了 `tests/`。四个门禁（输出回归 / 幂等 / 收敛 / 对拍）
@@ -317,11 +317,11 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | **S8-a** | 方言层收成**单一真身**：`dialects` 登记表 + `lexer`/`LayoutPass`/`grouping` 都从它取；未知方言报错；建 `dialect` topic | 方言用例 | **185 passed** | ✅ 完成（见 §9.9） |
 | **S8-b** | 方言词表归位（分词层词表也进 `dialects`）+ 补齐 20 个 Doris 类型名 | 方言用例 | **192 passed** | ✅ 完成（见 §9.10） |
 | **S8-c** | SQL Server：`GO` 批分隔符、`[ ]` 标识符、`TOP`、`WITH(NOLOCK)` | 方言用例 | **215 passed** | ✅ 完成（见 §9.11） |
-| **S8-d** | MySQL 方言：补齐 11 个类型名、表选项换行锚点、`ON DUPLICATE KEY UPDATE` 合并、`STRAIGHT_JOIN` 词边界、索引定义整体化 | 方言用例 | — | ⏳ 待开工（执行卡见 §9.12） |
+| **S8-d** | MySQL 方言：补齐 11 个类型名、表选项换行锚点、`ON DUPLICATE KEY UPDATE` 合并、`select straight_join` / `= values(col)` 的表达式内锚点 guard | 方言用例 | **234 passed** | ✅ 完成（见 §9.12） |
 
 > **方言优先级（用户口径，2026-09-13）**：**Doris / SelectDB 最优先 → 其次 MySQL →
 > Oracle / SQL Server 暂缓**。S8-c（SQL Server）已完成并保留，不回退、也不再往前推
-> （`PLAN §9` 头部同口径）。
+> （`PLAN §9` 头部同口径）。**S8-a~d 至此全部收，方言路线走完。**
 
 > 对拍列格式：`passed / xfailed`。
 > **L1 的规则要从「依赖输入换行」改成「结构性判定」**：`/*-*/` 与 `--` 强制断行、
@@ -424,28 +424,30 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 
 ## 9. 断点续做（下一次会话从这里开始）
 
-> 落盘时间：2026-09-13（S8-c 收工刷新），**S1–S7、S9、S10、S10-b、S8-a、S8-b、S8-c 全部完成**
+> 落盘时间：2026-09-13（S8-d 收工刷新），**S1–S7、S9、S10、S10-b、S8-a~d 全部完成**
 > （S7-a~e 五个提交见 §9.4 末尾，S9 见 §9.6，S10 见 §9.7，S10-b 见 §9.8，S8-a 见 §9.9，
-> S8-b 见 §9.10，S8-c 见 §9.11），**门槛 `pytest -q` → `215 passed`（0 failed / 0 xfailed）**，
+> S8-b 见 §9.10，S8-c 见 §9.11，S8-d 见 §9.12），**门槛 `pytest -q` → `234 passed`（0 failed / 0 xfailed）**，
 > 收敛门禁 `KNOWN_DIVERGENT` **已清空**，无遗留偏离清单。
 >
 > **本节是「阶段断点卡」**：每阶段的开工点与残留都记在这里。配合
 > [AGENTS.md](AGENTS.md) 的「**阶段推进协议**」（开工四步 / 收工六步 / 汇报格式）使用。
 >
 > **方言优先级（用户口径，2026-09-13 定）**：**Doris / SelectDB 最优先 → 其次 MySQL →
-> Oracle / SQL Server 暂缓不做**。Doris 一支已收（S8-a/b）；SQL Server（S8-c）**已完成并保留**
-> —— 不回退，也不再往前推。
+> Oracle / SQL Server 暂缓不做**。**S8-a~d 至此全部收**：Doris/SelectDB 与 MySQL 已适配；
+> SQL Server（S8-c）已完成并保留（不回退、也不再往前推）；Oracle 未开工。
 >
-> **下一步开工点**：**S8-d（MySQL 方言）** —— 勘测已做完，执行卡见 **§9.12**（本轮只写卡、未开工）。
-> 另有两条登记项不在 S8-d 范围：
-> 1. `json` / `map`（Doris）与 `double` / `enum` / `set` / `json` / `time` / `year`（MySQL）官方判成
->    `Keyword` → 本项目不改写官方条目，未覆盖；
-> 2. `LIMIT m, n` 被逗号折行、ALTER 多子句不换行 —— **Doris/MySQL 共享缺口**，需另开阶段。
+> **下一步开工点**：方言路线已走完，剩下的都是**共享缺口**（同时影响 Doris/MySQL），
+> 各自需先开新阶段卡再动手：
+> 1. `default null` 的列序：`align._create_field_lines` 假设「约束 → default」，而 `default null`
+>    是反序 → `default` 落在类型列后（`PLAN §9.12.1` 残留）；
+> 2. `LIMIT m, n` 被逗号折行、ALTER 多子句不换行；
+> 3. 官方判成 `Keyword` 的类型名（Doris 的 `json`/`map`；MySQL 的 `double`/`enum`/`set`/
+>    `time`/`year`）—— 覆盖 = 改写官方条目，与 `dialects` 原则冲突，需专门设计再定。
 
 ### 9.1 复现当前状态
 
 ```powershell
-.venv\Scripts\python.exe -m pytest -q                   # 门槛：215 passed（0 failed / 0 xfailed）
+.venv\Scripts\python.exe -m pytest -q                   # 门槛：234 passed（0 failed / 0 xfailed）
 .venv\Scripts\python.exe -m pytest -q -k convergence    # 只看收敛门禁（此刻全绿，无 xfail）
 ```
 
@@ -1370,8 +1372,8 @@ GO batch  sqlserver: select 1 \n GO \n\n select 2  generic: select 1 go \n\n sel
 | 1 | 类型名 | `mediumint bool varbinary tinytext mediumtext longtext tinyblob mediumblob longblob datetime zerofill` **11 个**落普通 `Name` → 不带括号时被 `group_identifier` 与字段名粘成一个 `Identifier`：`content mediumtext`、`data longblob`、`created_at datetime` 挤进同一列 | **修**：进 `extra_keywords`（`T.Name.Builtin`），与 U16 同机理 |
 | 2 | 表选项 | `) engine=innodb auto_increment=1 default charset=utf8mb4 collate=utf8mb4_general_ci comment='员工表'` 全挤在 `)` 之后；现存的换行是 `wrap_after=30` 撞出来的（`… default` / `charset = …` / `comment = …`） | **修**：`extra_split_words` 补锚点，各自成行 |
 | 3 | `ON DUPLICATE KEY UPDATE` | `duplicate` 落 `Name`、整段未合并 → 被切成 `on duplicate key` / `update b =` / `values(b);` 三行 | **修**：多词合并成一个 `Keyword` |
-| 4 | `STRAIGHT_JOIN` | `policy._join_words` 的 `JOIN\b` 用 `re.search` **命中 `straight_join` 内部**（`search` 不要求词边界）→ `select` 后被硬断行：`select\nstraight_join a.id  ,` | **修**：给该锚点加词边界（负向后顾） |
-| 5 | 索引定义 | `key idx_dept (dept_id)` / `unique key uk_name (name)` 的 `idx_dept` 被当成字段名 → 列错位；`primary key (id)` 正常 | **修**：把「`KEY` / `INDEX` / `UNIQUE KEY` / `FULLTEXT KEY` + 名字 + 括号」当一个整体 |
+| 4 | `STRAIGHT_JOIN` / `VALUES(col)` | `straight_join` 被 `policy._join_words` 命中 → `select` 后被硬断行（`select\nstraight_join a.id  ,`）；`b = values(b)` 里的 `values` 撞通用锚点 → 右值被甩到下一行 | **修**：加**结构性 guard**「锚点紧跟 `SELECT`（select 修饰符）或紧跟 `=`（赋值右值）时不换行」 |
+| 5 | 索引定义 | 复查：`idx_dept (dept_id)` 被官方 `group_functions` 包成 `Function` → 落在**类型列**并与真实类型列对齐，输出**已对齐** | **不改**（不是缺陷；改「整体一项」只会让逗号跑到最右，属风格取舍） |
 | 6 | `DOUBLE/ENUM/SET/JSON/TIME/YEAR` | 官方判成 `Keyword`（不是 `Name.Builtin`） | **不改**（覆盖 = 改写官方条目，与 `dialects` 原则冲突），登记 |
 | 7 | `LIMIT 10, 20` / ALTER 多子句 | 被逗号折行 / 后半段全挤一行 —— **Doris 同样如此**（勘测里 `mysql == doris : True` 的那条 ALTER 即证据） | **不修**（Doris/MySQL 共享缺口，另开阶段） |
 
@@ -1391,27 +1393,81 @@ mysql = Dialect(
 )
 ```
 
-⚠️ 表选项锚点**必须收窄到带 `=` 的形态**（`ENGINE\s*=`、`AUTO_INCREMENT\s*=`、
-`(DEFAULT\s+)?CHARSET\s*=`、`COLLATE\s*=`、`COMMENT\s*=`、`ROW_FORMAT\s*=`），否则列级
-`comment '主键'` 也会被拆行。`PARTITION BY` 目前是两个独立 `Keyword`，要靠上面的多词合并先并成
-一个 token，锚点才匹配得上（MEMORY §5「多词关键字必须先合并」）。
+**实现期的两处纠偏**（勘测时的判断有误，开工时按实测改正；已同步到 `§9.12.1`）：
+
+1. 换行锚点是**对单个 token** 做正则匹配（`Token.match(ttype, values, regex=True)` 拿 values 里每条
+   **整正则**去 `search` 一个 token 的 value）→ **`ENGINE\s*=` 这种跨 token 的写法永远匹配不上**
+   （`engine` 与 `=` 是两个 token）。正确做法：锚点写**裸词**（`ENGINE` / `CHARSET` / `COLLATE` /
+   `ROW_FORMAT` / `AUTO_INCREMENT`），跨词的 `DEFAULT CHARSET` 先用 `extra_lexer_rules` 合并成一个 token。
+2. 裸 `COMMENT` 锚点**不会**拆散列级 `comment '主键'` —— 字段列表的列布局走
+   `align._create_field_lines`（按逗号切段），`_split_kwds` 在那里根本不跑。实测 MySQL 建表的
+   `comment '主键'` 稳在「注释列」。因此 `COMMENT` **不需要**收窄、也不必重复声明 ——
+   `policy.split_words` 里已有一条**通用**锚点（不能动它）。
 
 **验收（门槛数字）**：
 - 原 **215 项一项不变**（默认方言仍 `doris`；MySQL 构造在既有 fixture 里 grep 零命中）；
 - `dialect="mysql"`：①建表类型列与字段名不粘连（列对齐正确）；②`)` 之后每个表选项各占一行；
-  ③`on duplicate key update` 不被切断；④`select straight_join …` 的字段仍与 `select` 同行；
-  ⑤`key idx (…)` / `unique key name (…)` 各占一行且不参与字段列对齐；
-- `dialect=None`：五处**都不生效** → 开关真起作用；
-- `.venv\Scripts\python.exe -m pytest -q` → 215 + 新增（fixture × 5 门禁 + 断言）。
+  ③`on duplicate key update` 不被切断、`b = values(b)` 不被拆行；
+- **与方言无关**（结构性 guard，`doris` / `None` 同时受益）：④`select straight_join …` 的字段仍与
+  `select` 同行；
+- `dialect=None`：①②③**都不生效** → 开关真起作用；
+- `.venv\Scripts\python.exe -m pytest -q` → 215 + 新增（3 个 fixture × 5 门禁 + 4 条断言 = 19）。
 
 **风险 / 雷区**：
-- `COMMENT` 收窄是**必需**的 —— `policy.split_words` 里那条裸 `COMMENT` 是**通用**锚点，不能动它；
-- `_join_words` 加词边界会**同时影响所有方言**的 `JOIN` 匹配 → 必须跑全量门禁确认零回归；
-- 索引定义整条化若走「分组层预包」，注意 U13 类副作用：括号的父组一变，`layout` 可能收不到它
-  → 排查先看**括号的父组是谁**；
-- `mysql` 一旦 `precedence_patches=True`，`over (` 行为与 `doris` 一致，需确认既有 fixture 无回归；
+- 换行锚点是**整 token 匹配**（见上「纠偏 1」）—— 新锚点写完必须**实跑**确认真的生效，别只写进声明；
+- `_split_kwds` 的结构性 guard 是**通用**改动（`policy` 词表一个字没改）→ 必须跑全量门禁确认零回归；
 - `extra_split_words` 会被 `grouping._CLAUSE_WORDS` 取并集（分组形状与方言无关）→ 新锚点会
-  **同时**影响分组判定，别只测换行。
+  **同时**影响分组判定，别只测换行；
+- `mysql` 一旦 `precedence_patches=True`，`over (` 行为与 `doris` 一致，需确认既有 fixture 无回归。
 
 **回退方式**：`git revert <本阶段提交>`（`dialects.py` / 可能 `policy.py` / `grouping.py` 文本改动
 + 新增 topic/fixture/断言；纯文本、无不可逆动作）。
+
+#### 9.12.1 S8-d 已收（2026-09-13）
+
+**改动**（4 个文件 + 1 个新 topic；`policy.py` / `grouping.py` **一个字没动**）：
+
+| 文件 | 改动 |
+|---|---|
+| `dialects.py` | 声明 `mysql`：`precedence_patches=True`（MySQL 8 窗口函数的 `OVER (`）+ `extra_lexer_rules`（`ON DUPLICATE KEY UPDATE`、`DEFAULT CHARSET`、`PARTITION BY` 三个多词合并）+ `extra_keywords`（`_MYSQL_TYPE_NAMES` 11 个）+ `extra_split_words`（`_MYSQL_SPLIT_WORDS` 7 个表选项锚点） |
+| `passes/layout.py` | 新增 `_is_expression_anchor`，在 `_split_kwds` 里跳过「落在表达式内部」的锚点词（紧跟 `SELECT` / 紧跟 `=`）—— **通用**规则，不看输入空白 |
+| `tests/` | 新增 `cases/mysql/sqltest0_s01.sql`（建表：类型名 + 表选项）、`sqltest1_s01.sql`（upsert）、`sqltest2_s01.sql`（`straight_join`）+ `TOPIC_META["mysql"]` + `test_sqlfmt_dialect.py` 4 条断言 |
+
+**补齐的 11 个类型名**：`BOOL DATETIME LONGBLOB LONGTEXT MEDIUMBLOB MEDIUMINT MEDIUMTEXT
+TINYBLOB TINYTEXT VARBINARY ZEROFILL`。`DOUBLE` / `ENUM` / `SET` / `JSON` / `TIME` / `YEAR`
+官方是 `Keyword` → **不改写官方条目**，登记（同 §9.10.1 的 `JSON`/`MAP`）。
+
+**效果（证据）**：
+
+```text
+类型名   mysql: content    mediumtext,          generic: content mediumtext        ,
+表选项   mysql: )  ⏎ engine = innodb ⏎ auto_increment = 1 ⏎ default charset = utf8mb4
+         generic: ) engine = innodb default ⏎ charset = utf8mb4     ← 换行是 wrap_after 撞的
+upsert   mysql: on duplicate key update b = values(b);
+         generic: on duplicate key ⏎ update b = values(b);
+straight_join（通用 guard，doris/None 同样受益）:
+         select straight_join a.id  ,        ← 修前是 select ⏎ straight_join a.id  ,
+                      a.name
+```
+
+**验收**：`.venv\Scripts\python.exe -m pytest -q` → **`234 passed`（0 failed / 0 xfailed）**。
+
+- 原 215 项一项没动；新增 19 项 = 3 个 fixture × 5 门禁（输出回归 1 + 幂等 2 + 收敛 1 +
+  case-integrity 1）+ `test_sqlfmt_dialect.py` 4 条；
+- `dialect=None` 下类型名 / 表选项 / upsert 三处**都不生效** → 开关真起作用；
+- 冒烟（14 条 MySQL 构造：反引号、窗口函数、CTE、`insert … set`、`replace into`、`limit/offset`、
+  `group by`/`having`、`left join`、多语句）与 `dialect=None` **逐条相同**（唯一 DIFF 是表选项，
+  即本轮目标）。
+
+**残留 / 下一步**：
+
+- **`default null` 的列序**：`dept_id int(11) default null` 里 `default` 排在 `null` 前，而
+  `align._create_field_lines` 的列序假设是「约束 → default」→ `default` 落在类型列后、`null` 独占约束列。
+  属 `align.py` 的**通用**列序假设（Doris/Postgres 同受影响）→ 另开阶段。
+- `LIMIT m, n` 被逗号折行、ALTER 多子句不换行：**Doris/MySQL 共享缺口**（同上）。
+- Doris 的 `DUPLICATE` 锚点会在 MySQL 的 `on duplicate key update` 里误触发（跨方言组合；
+  单独用 `dialect=mysql` 无此问题）。
+- **方言路线（S8-a → S8-d）至此全部走完**：Doris/SelectDB（最优先）、MySQL 已适配；
+  Oracle / SQL Server 按用户口径**暂缓**（SQL Server 已完成并保留）。
+
+**回退方式**：`git revert <本阶段提交>`（4 处文本改动 + 新增 topic/fixture/断言；纯文本、无不可逆动作）。

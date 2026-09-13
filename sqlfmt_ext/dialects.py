@@ -98,6 +98,57 @@ _DORIS = Dialect(
     notes="SelectDB 同族；官方缺失，按 MySQL 兼容适配",
 )
 
+# --- MySQL ------------------------------------------------------------------
+
+# 官方 0.6.0 词表缺的 MySQL 类型名 —— 它们落普通 `Name`，于是**不带括号**时被
+# `group_identifier` 与字段名粘成一个 `Identifier`，`_create_field_lines` 的类型列取不到
+# token，DDL 的列基准整体错位（U16 的机理，S8-b 在 Doris 侧已处置同类）。
+# 带括号的写法（`varchar(64)` / `decimal(10,2)`）不受影响：官方「函数名」正则先把它截成
+# `Name`，但紧跟的括号会被 `group_functions` 收成一个 `Function` 组，天然与字段名分开。
+# ⚠️ `DOUBLE` / `ENUM` / `SET` / `JSON` / `TIME` / `YEAR` 官方已判成 `Keyword`（不是
+# `Name.Builtin`）→ 本项目**不改写官方已有条目**，未覆盖（登记在 `PLAN §9.12`）。
+_MYSQL_TYPE_NAMES = (
+    "BOOL",
+    "DATETIME",
+    "LONGBLOB",
+    "LONGTEXT",
+    "MEDIUMBLOB",
+    "MEDIUMINT",
+    "MEDIUMTEXT",
+    "TINYBLOB",
+    "TINYTEXT",
+    "VARBINARY",
+    "ZEROFILL",
+)
+
+_MYSQL_EXTRA_KEYWORDS = tuple((w, T.Name.Builtin) for w in _MYSQL_TYPE_NAMES)
+
+# MySQL 专属的多词关键字（**只对本方言生效**，不套 Doris 的 `DISTRIBUTED BY` /
+# `BUILD IMMEDIATE` 那一套 —— 那些是 Doris 语义，套到 MySQL 上会改变 token 边界）：
+#   * `ON DUPLICATE KEY UPDATE` —— 不合并时 `duplicate` 落 `Name`，整段被切成三行
+#     （`on duplicate key` / `update b =` / `values(b);`）；
+#   * `DEFAULT CHARSET` —— 表选项，必须先合并成一个 token，下面的换行锚点才匹配得上
+#     （锚点对**单个 token** 做正则匹配，跨 token 匹配不上）；
+#   * `PARTITION BY` —— Doris 侧由 `policy.MULTIWORD_REGEX` 合并，MySQL 走自己的规则。
+_MYSQL_EXTRA_LEXER_RULES = (
+    (r"ON\s+DUPLICATE\s+KEY\s+UPDATE\b", T.Keyword),
+    (r"DEFAULT\s+CHARSET\b", T.Keyword),
+    (r"PARTITION\s+BY\b", T.Keyword),
+)
+
+# 表选项换行锚点：`)` 之后每个选项各自成行（与 Doris 的 `PROPERTIES` / `DISTRIBUTED BY` 同形）。
+# `COMMENT` **刻意不列** —— `policy.split_words` 里已有一条**通用**的裸 `COMMENT` 锚点，
+# 重复声明没有意义。
+_MYSQL_SPLIT_WORDS = (
+    "ENGINE",
+    "AUTO_INCREMENT",
+    r"DEFAULT\s+CHARSET",
+    "CHARSET",
+    "COLLATE",
+    "ROW_FORMAT",
+    r"PARTITION\s+BY\b",
+)
+
 # --- SQL Server -------------------------------------------------------------
 
 # ``WITH (NOLOCK)`` 的表提示必须让 ``WITH`` **不是** ``Keyword.CTE``：官方词表里 ``WITH`` 落
@@ -118,7 +169,15 @@ _SQLSERVER_EXTRA_KEYWORDS = (("TOP", T.Keyword), ("PERCENT", T.Keyword))
 
 DIALECTS = {
     None: Dialect(name="generic", notes="不追加任何东西，与官方基线可比"),
-    "mysql": Dialect(name="mysql", notes="预留：目前与通用路径一致"),
+    "mysql": Dialect(
+        name="mysql",
+        # MySQL 8 有窗口函数 → 与 Doris 同样需要 `OVER (` 优先级补丁
+        precedence_patches=True,
+        extra_lexer_rules=_MYSQL_EXTRA_LEXER_RULES,
+        extra_keywords=_MYSQL_EXTRA_KEYWORDS,
+        extra_split_words=_MYSQL_SPLIT_WORDS,
+        notes="建表类型名 / 表选项锚点 / ON DUPLICATE KEY UPDATE",
+    ),
     "doris": _DORIS,
     "selectdb": Dialect(
         name="selectdb",
