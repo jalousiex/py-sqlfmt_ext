@@ -204,10 +204,12 @@ fork 侧 `ws=' ' ws_idx=1`）；两侧 `_identifier_layouts` 的汇总值**完�
 
 ---
 
-## 4. 规则总表（全部待实现项）
+## 4. 规则总表（**规划期记录**：全部已落地，行内标注收尾阶段）
 
-旧 fork 参考位置：`sqlparse/filters/aligned_indent.py`（下称 `ai.py`）。
+旧 fork 参考位置：`sqlparse/filters/aligned_indent.py`（下称 `ai.py`，S7 已随 fork 删除）。
 **注意**：参考的是「期望语义」，不是「实现方式」——旧实现里与擦除相关的部分一律不移植。
+L1 的**跨注释组**部分（同层并列的两段注释不共享一行）在 **S9** 才补成结构性口径，
+见 §9.6；L5 的口径在 S5c 重定、S7 重定基线。
 
 ### LayoutPass（只改换行位置）
 
@@ -219,7 +221,7 @@ fork 侧 `ws=' ' ws_idx=1`）；两侧 `_identifier_layouts` 的汇总值**完�
 | L4 | **多 LATERAL VIEW 各自分行** | 1 个 | `ai.py::_is_lateral_view_list`(160)、`_split_kwds`(812) |
 | L5 | **CASE 首个 WHEN 独占一行**（⚠️ 旧实现在 `has_nl and direct_after_case` 上判定，即**依赖输入换行**；官方 strip 之下没有该换行，需重新定义为结构性规则，或在 S7 重定基线） | 1 个 | `ai.py::_process_case`(427) |
 | L6 | **`select * from` 折叠同行** | 1 个 | `ai.py::_is_simple_select_star`(870) |
-| L7 | **`ON COMMIT` 刻意分行**（白名单） | 1 个 | `ai.py::_normalize_newlines`(87) 白名单 |
+| L7 | **`ON COMMIT` 刻意分行**（白名单；S9 已结构化 —— 命中者一律按分词切开，不再看输入写在哪一行） | 1 个 | `ai.py::_normalize_newlines`(87) 白名单 |
 
 ### AlignPass（只改同行空白宽度）
 
@@ -311,6 +313,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | **S4c** | 官方 `group_functions` 的 CREATE+TABLE 早退严于 fork（`ddl/s01`） | +1 | — | ⏳ 可并入 S6 |
 | **S6** | 列对齐收尾（真因多为**分组/分词**：U15 尾逗号、U16 缺 `DATETIME`、U13 CREATE 早退、S6b 相邻续接列表） | +7 | **31 / 0** | ✅ 完成（起点 7 个全部带回） |
 | **S7** | 收敛 + 幂等 + 入口切换 + 删 fork + 改 README + 处置有意偏离清单 | 新实现通过全部 4 套测试 | **172 passed / 4 xfailed** | ✅ 完成（S7-a~e 五个独立提交，见 §9.4） |
+| **S9** | 注释断行的结构性口径：跨注释组强制换行 + `ON COMMIT` 白名单结构化 | 收敛门禁 4 xfail → 1 | **175 passed / 1 xfailed** | ✅ 完成（见 §9.6） |
 | **S8** | 方言层补完（Doris/SelectDB）+ SQL Server 适配 | 方言用例 | — | ⏳ 待做，可并行 |
 
 > 对拍列格式：`passed / xfailed`。
@@ -410,23 +413,29 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 
 ## 9. 断点续做（下一次会话从这里开始）
 
-> 落盘时间：2026-09-13，**S1–S7 全部完成**（S7-a~e 五个提交，见 §9.4 末尾小结），
-> **门槛 `pytest -q` → `172 passed, 4 xfailed`（0 failed）**，无遗留偏离清单。
+> 落盘时间：2026-09-13（S9 收工刷新），**S1–S7、S9 全部完成**（S7-a~e 五个提交见 §9.4 末尾，
+> S9 见 §9.6），**门槛 `pytest -q` → `175 passed, 1 xfailed`（0 failed）**，无遗留偏离清单。
 >
 > **本节是「阶段断点卡」**：每阶段的开工点与残留都记在这里。配合
 > [AGENTS.md](AGENTS.md) 的「**阶段推进协议**」（开工四步 / 收工六步 / 汇报格式）使用。
-> 下一个可开工的阶段见 §3 状态表：**S8（方言补完）**，以及 §4 末尾那条未系统化项
-> （`--` / `/*-*/` 的**结构性强制断行**规则 —— 收敛门禁剩下的 4 个 xfail 正属这一族）。
+>
+> **下一步开工点**：`PLAN §3` 状态表里只剩 **S8（方言补完 Doris/SelectDB → SQL Server）**。
+> 收敛门禁剩 1 个 xfail（`cte/sqltest2_s01`），它是**口径冲突不是缺口**，见下方「残留」。
 
 ### 9.1 复现当前状态
 
 ```powershell
-.venv\Scripts\python.exe -m pytest tests/ -q            # 170 passed, 6 xfailed（旧 fork，必须保持）
-.venv\Scripts\python.exe -m pytest tests_migration/ -q  # 31 passed（新外挂，KNOWN_DIFF 已清空；另有 1 条有意偏离是断言项）
-.venv\Scripts\python.exe _tmp_check.py                  # 逐用例精确 diff（当前唯一主力诊断）
+.venv\Scripts\python.exe -m pytest -q                   # 门槛：175 passed, 1 xfailed（0 failed）
+.venv\Scripts\python.exe -m pytest -q -k convergence    # 只看收敛门禁（1 xfail 即 cte/sqltest2_s01）
 ```
 
-两个套件**不要在同一次 pytest 会话里跑**（进程级 `sys.path` 副作用，见 §2.3）。
+只有一套测试（S7 删 fork 后 `tests_migration/` 已并入 `tests/`）。
+
+**残留（唯一 1 个 xfail）**：
+
+| 用例 | 现象 | 为什么不修 |
+|---|---|---|
+| `cte/sqltest2_s01` | 压平输入后，`where … = 0` 尾部的 `-- 顶行首注释` 被并回同一行、`;` 缩进 7 而不是「注释列 0 + `;` 列 0」 | canonical 那两行的摆放**本身以输入为准**：用户定的口径是「注释串原本在列 0 的保持不变」，而「原本」只能从输入空白看出（`prev_.is_newline` 分支），**与 C4 天然冲突**。要收敛只能重定该 fixture 的注释缩进口径 —— 属口径决策，不是实现缺口（S9 实测：`--` / `/*-*/` 的其它结构性断行都已不依赖输入空白） |
 
 ### 9.2 空白归一化（U11）最终形态
 
@@ -443,12 +452,15 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 `' '*82` 里只删掉 1 个，剩下的 1 个空格留在逗号前，与 `AlignMixin` 填好的对齐
 空白叠加 → 非 AS 字段的末尾逗号整体多 1 列。
 
-### 9.3 分段任务卡（一次只做一段；每段结束跑两套测试 + 提交）
+### 9.3 分段任务卡（迁移期记录 · 已过期，只作历史）
 
-> 分段原则：**一段 = 一条规则 / 一个根因**，上下文只读该段需要的文件；
+> **本节是 S4–S7 迁移期的原始记录**：当时的「两套测试」「对拍 passed/xfailed」
+> 「`KNOWN_DIFF` / `DEVIATIONS`」都随旧 fork 一起在 S7 删掉了，现在只有
+> `tests/` 一套件、只有收敛门禁里的 `KNOWN_DIVERGENT`。读它是为了看**根因与教训**，
+> 里面的命令与门槛数字**不要再执行/比对**。
+>
+> 分段原则（仍然适用）：**一段 = 一条规则 / 一个根因**，上下文只读该段需要的文件；
 > 需要跨文件探索的先用 `code-explorer` 子代理，把结论（不是文件内容）带回主线。
-> 每段收尾动作固定：`pytest tests/ -q`（须 170 passed, 6 xfailed）→
-> `pytest tests_migration/ -q` → 更新 `test_parity.KNOWN_DIFF` → 更新本文件进度 → commit。
 
 | 段 | 目标 | 涉及用例（当前 9 xfailed） | 主读文件 | 状态 |
 |---|---|---|---|---|
@@ -461,7 +473,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | S6b | 列表末尾列口径（末项逗号列 ±2 / 整体 +1） | `case/s01`、`nested/s01`、`window/s03` | `align.py::_identifier_layouts` / `_apply_identifier_layout` | ⏳ 下一段 |
 | S6c | U13：官方 `group_functions` 的 CREATE+TABLE 早退 | `ddl/s01` | `grouping.py::_wrap_create_table_calls` | ✅ 完成（27 → 28） |
 | S6 | （起点 7 个）U15 尾逗号吞子句关键字 | `nested/s02`、`window/s01` | `grouping.py::_trim_clause_tail` | ✅ 完成（24 → 26） |
-| S7 | 收敛 + 幂等 + 入口切换 + 删 fork + 改 AGENTS/README + 删 `_tmp_*` | — | — | ⏳ |
+| S7 | 收敛 + 幂等 + 入口切换 + 删 fork + 改 AGENTS/README + 删 `_tmp_*` | — | — | ✅ 完成（终值 172/4） |
 
 **分段推进的操作要点（省上下文的做法）**
 1. **先分类再动手**：`python _tmp_check.py` 只看摘要（每例首 2 处差异 + 「是否只是空白宽度」），
@@ -820,30 +832,89 @@ S6c = U13（`_wrap_create_table_calls` 在官方分组后补包 `Function`）修
   `is_last` 会额外 `+1`。改之前先用 `_tmp_align_probe.py` 把两侧的
   `[layouts]` / `[apply]` 打出来对齐，再动算术。
 
-### 9.4 诊断工具（仓库根 `_tmp_*.py`，已在 `.gitignore`，S7 统一删除）
+### 9.4 诊断工具（**已全部删除**，需要时现场写 `_tmp_*.py`）
 
-| 脚本 | 用途 |
-|---|---|
-| `_tmp_check.py` | **主力**：逐用例打印期望/实际首处差异（repr 精确到空白），可带用例名过滤 |
-| `_tmp_cmp.py --fork/--new "<sql>"` | 同一片段两侧输出对照；`\n` 表示换行；`@相对路径` 直接喂 fixture 文件；两侧选项已与主套件口径对齐 |
-| `_tmp_align_dbg.py --fork/--new` | 打印 `_identifier_layouts` 汇总值（as_offset 列表 / max_as_offset） |
-| `_tmp_align_trace.py --fork/--new` | 打印 `_apply_identifier_layout`/`_set_adjacent_ws` 入参与被替换的空白 token |
-| `_tmp_ws_when.py` | 在 LayoutPass 前后审计「value 为空的空白 token」数量（U11 后应接近 0） |
-| `_tmp_forkidx.py "<sql>"` | 打印 fork 树（带下标）+ IdentifierList 成组区间 |
-| `_tmp_count.py --fork/--new` | 数某一列（如 `as`）的落位 |
+S7 把迁移期的探针（`_tmp_check.py` / `_tmp_cmp.py --fork` / `_tmp_align_*.py` /
+`_tmp_forkidx.py` …）连同旧 fork 一起删了 —— 那些脚本的 `--fork` 侧已无处可跑。
+`.gitignore` 仍忽略 `_tmp_*`，所以**诊断脚本一律现场写、用完即删**。诊断手法（元规则一~七、
+工作流、坑位）见技能 `.codebuddy/skills/sqlfmt-parity/`，不要再在这里复制一份。
+
+唯一**没有** fork 也能用的形状：直接读树。
+
+```python
+# _tmp_dump.py：在 LayoutPass 入口 dump 语句层 token（带 ttype / is_newline / 缓存 value）
+import sqlfmt_ext.stack as st
+orig = st.LayoutPass.process
+def patched(self, stmt):
+    for tk in stmt.tokens:
+        print(type(tk).__name__, repr(tk.value), tk.ttype, "is_nl=", tk.is_newline)
+    return orig(self, stmt)
+st.LayoutPass.process = patched
+from sqlfmt_ext import format_statements
+print(format_statements("..."))
+```
 
 **排查踩过的坑**：
 - `FilterStack.run(sql)` 返回**生成器**，不消费等于没跑 → 自建探针时必须
   `list(stack.run(sql))`，否则「探针没打印」会被误判成「没有该现象」。
 - 官方 `Lexer.get_tokens()` 产出的是 `(ttype, value)` **元组**，不是 Token 对象。
-- fork 与新实现要用**两次独立进程**跑（同进程只能加载一个 `sqlparse`）。
-- 对比 fork 输出时**选项必须与主套件一致**（`sqlfmt.DEFAULT_OPTIONS`）：
-  多传一个 `comma_align=True` 就会凭空多出空行，很容易误判成「新实现缺规则」。
-- **规则→用例映射要用最小化输入复核**（见 §4 末尾「首版映射」教训）。
+- `Token.is_newline` 是**构造期按 ttype 缓存**的属性、`Token.normalized` 同理，
+  strip 之后 value 变了、这两个不变 —— 想验证「输出是否依赖输入空白」，
+  用压平输入 `tests.fixtures.whitespace.flatten_whitespace` 跑一遍再比即可。
+- 探针要打「真实 fixture」而不是抽出来的片段：很多形状只在完整 fixture 里出现
+  （§8 第十五轮 `nested/sqltest3_s01` 的教训）。
 
 ### 9.5 不要做的事
 
-- 不要改 `sqlparse/`（旧 fork）——迁移期它是 oracle，S7 才删。
 - 不要用「改 ttype / 删非空白 token / 重排」的手法对齐（C5）。
-- 不要把迁移期的 `sys.path` 调整写进 `tests_migration/` 之外的 conftest。
-- 不要 commit 之前跑混两个套件的 pytest 会话。
+- 不要用「改官方 strip 让它保留换行」的魔改（C4）—— 想利用「输入这里有个换行」时，
+  先看 `Token.is_newline` 那类**缓存属性**（它就是残留，见 §9.6）。
+- 不要把诊断脚本留在仓库里（`_tmp_*` 用完即删）。
+
+### 9.6 S9 已收（2026-09-13）：注释断行的结构性口径 —— 收敛门禁 4 xfail → 1
+
+**靶子**：F6（收敛门禁）剩的 4 个 xfail，全部是「输出仍依赖输入空白」，且都是注释/分号
+的**结构性断行**没做透：`comma/sqltest7_s02`、`nested/sqltest3_s01`、`ddl/sqltest0_s04`、
+`cte/sqltest2_s01`。
+
+**复现**：`tests/fixtures/whitespace.flatten_whitespace` 把 canonical 的换行压成空格再格式化，
+输出必须还是 canonical。四项实测差异只有三处根因（诊断脚本用完即删）：
+
+| 用例 | 根因 |
+|---|---|
+| `comma/sqltest7_s02`、`nested/sqltest3_s01` | 两段相邻注释「各占一行」只由**组内**规则（`_break_between_comments`）保证；而这两段注释经官方 `align_comments` 并组、又被 `_unabsorb_trailing_comments` 拆回后，是**同层并列的两个 `Comment` 组** —— 组内规则看不到它们，旧实现只剩「输入里这里正好有换行」（`prev_.is_newline`）兜着，压平即失效 |
+| `ddl/sqltest0_s04` | `ON COMMIT` 白名单只做了一半：输入写 `on\ncommit` 时保留分行，写 `on commit` 时不管 → 输出依赖输入 |
+
+**改动**（都在 `sqlfmt_ext/passes/layout.py`，无新文件）：
+
+1. **`_break_before_sibling_comment`（新增）**：`_break_between_comments` 的同一条规则
+   「两段注释不共享一行」，扩到**同层并列的注释组**。判据是结构性的「**前一段注释自己不带
+   行尾换行**」（`-- x` 的 token 含行尾换行、块注释不含）→ 换行 `self.nl(0)`（本层缩进）。
+   在 `_process_comment` 里紧跟 `_break_between_comments` 调用（必须在它那个「只处理
+   `--` / `/*-*/`」的早退之前）。
+   为什么不并组：试过在 `grouping` 层把相邻注释并成一个组，**回归 4 个用例**
+   （`ddl/sqltest0_s05`、`window/sqltest6_s02`、`case/sqltest4_s01`、`cte/sqltest2_s02`）——
+   那些是**行注释**串，后一段的缩进要交给 `_process_comment` 的对齐逻辑（列 7），
+   并组会把它们拉回列 0。判据必须落在「前一段自不自带换行」上。
+2. **`_normalize_newlines` 的 `keep_newline` 白名单改成结构性**：命中者（`ON COMMIT`）
+   一律 `self.n.join(tk.value.split())` 切开，不管输入是 `on\ncommit` 还是 `on commit`。
+   `normalized` 同步更新（`'ON\nCOMMIT'`，下游都走 `\s+` 正则匹配，不受影响）。
+
+**证据**：改后 `pytest -q` → `175 passed, 1 xfailed`；4 项里 3 项 **XPASS(strict)** 报错
+（说明确实收敛），按纪律从 `tests/test_sqlfmt_convergence.py::KNOWN_DIVERGENT` 删除并写明原因。
+`172 passed` 那批（输出回归 / 幂等）一个没动。
+
+**验收**：`.venv\Scripts\python.exe -m pytest -q` → **`175 passed, 1 xfailed`（0 failed）**。
+
+**残留 / 下一步**：
+- `cte/sqltest2_s01` 留作**已登记的发散**（不是缺口）：canonical 把 `-- 顶行首注释` 放在列 0、
+  `;` 也放列 0，而这一摆放**只能由输入空白判定**（`prev_.is_newline` 分支，即用户定的
+  「注释串原本在列 0 的保持不变」口径）。压平输入后该注释本来不在列 0，任何**结构性**实现都
+  给不出 canonical 那两行 → 要收敛只能重定该 fixture 的注释缩进口径，属**口径决策**，
+  留给用户拍板（若要拍：新起一段，别顺手改 fixture）。
+- 下一阶段按 §3 状态表：**S8 方言补完**（Doris/SelectDB → SQL Server）。
+
+**回退方式**：两处改动各自独立 —— `_process_comment` 里的那一行调用（删掉即回到
+「依赖输入换行」）与 `_normalize_newlines` 里新增的 `if` 分支（删掉即回到「只在输入已是
+换行时保留」）。`KNOWN_DIVERGENT` 的两处删项也各自 revert 即可，`xfail(strict=True)`
+会在回退不彻底时主动报错。

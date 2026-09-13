@@ -116,6 +116,8 @@ class LayoutPass(AlignMixin):
         CASE 之后的换行决定 WHEN 是否另起一行，因此保持原样。
         """
         # commit 属 DML 关键字，_split_statements 会刻意让它另起一行（见 ddl/sqltest0_s04）
+        # 白名单是**结构性**的：命中者一律按分词切开（`on` / `commit` 各占一行），
+        # 输入写在一行时也这样切，否则输出会依赖输入空白。
         keep_newline = {"ON COMMIT"}
         prev_ = None
         for tk in stmt.flatten():
@@ -132,6 +134,13 @@ class LayoutPass(AlignMixin):
                     tk.is_newline = False
                 continue
             if (
+                tk.is_keyword
+                and " ".join(tk.normalized.split()) in keep_newline
+                and self.n not in tk.value
+            ):
+                tk.value = self.n.join(tk.value.split())
+                tk.normalized = tk.value.upper()
+            elif (
                 self.n in tk.value
                 and (tk.is_keyword or tk.ttype in T.Operator or tk.ttype is T.Name.Builtin)
                 and " ".join(tk.normalized.split()) not in keep_newline
@@ -608,6 +617,37 @@ class LayoutPass(AlignMixin):
                     continue
                 tlist.insert_before(token, self.nl(0))
 
+    def _break_before_sibling_comment(self, tlist):
+        """与本层紧邻的前一段注释**不共享一行** —— `_break_between_comments` 的同一条规则。
+
+        `_break_between_comments` 只管**同一个** ``sql.Comment`` 组里的兄弟 token；
+        而两段相邻注释往往落在**同层并列的两个 ``Comment`` 组**里：官方
+        ``align_comments`` 会把后一段并进前一段所在的组，随后
+        `_unabsorb_trailing_comments` 又把它拆回原位。这种形状下旧实现只靠
+        「输入里这里正好有个换行」（`_process_comment` 后半段的 ``prev_.is_newline``）
+        才把它们分开，输入一压平就被挤回同一行 —— 收敛门禁的
+        `comma/sqltest7_s02`、`nested/sqltest3_s01` 正是卡在这里。
+
+        判据换成结构性的：**前一段注释自己不带行尾换行**（``-- x`` 的 token 含换行，
+        块注释不含）说明两者此刻必定同处一行，需要强制换行；反之行注释自己已经另起
+        一行，缩进交给 `_process_comment` 的对齐逻辑，不动它。
+        """
+        plist = tlist.parent
+        if plist is None:
+            return
+        pidx = plist.token_index(tlist)
+        if pidx is None or pidx <= 0:
+            return
+        prev_ws = plist.tokens[pidx - 1]
+        if not prev_ws.is_whitespace or self.n in prev_ws.value:
+            return
+        _, prev_ = plist.token_prev(pidx, skip_ws=True)
+        if prev_ is None or not self._is_comment(prev_):
+            return
+        if prev_.value.endswith(self.n):
+            return
+        prev_ws.value = self.nl(0).value
+
     @staticmethod
     def _ends_with_comment(token):
         """``token`` 的最后一个非空白后代是不是注释（注释串延续的标志）。
@@ -633,6 +673,9 @@ class LayoutPass(AlignMixin):
         # 深度遍历时的注释要基于父对象处理，在后一token前换行，含新增的强制换行
         # 注释组内相邻注释先各自成行（结构性规则，与下方「跟随输入换行」的分支无关）
         self._break_between_comments(tlist)
+        # 同层并列的注释组之间同理（`align_comments` + `_unabsorb_trailing_comments`
+        # 让相邻注释成为两个并列组，组内规则看不到它们）
+        self._break_before_sibling_comment(tlist)
 
         # comma_first 模式下，IdentifierList 中的注释已由 _process_identifierlist 处理，跳过
         if self.comma_first and isinstance(tlist.parent, sql.IdentifierList):

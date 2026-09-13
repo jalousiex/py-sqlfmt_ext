@@ -77,7 +77,7 @@ sqlfmt.py → sqlfmt_ext.format_statements()
 - `sqlfmt_ext/options.py` — 默认参数与校验（扩展项 `align_list` / `dialect`）
 
 `PLAN.md` 记录了「官方 0.6.0 与旧 fork 的语义差异清单（U1–U16）」、每处补偿的落点与
-时序约束，以及迁移收口（S1–S7）的进展。
+时序约束，以及迁移收口（S1–S7）与后续阶段（S9 注释断行的结构性口径）的进展。
 
 ### 测试约定
 
@@ -90,7 +90,7 @@ sqlfmt.py → sqlfmt_ext.format_statements()
   （`xfail(strict=True)` 会在修好时主动报错提示）
 - 仓库根 `conftest.py` 会校验 `sqlparse.__file__` 来自 site-packages —— 防止「仓库内 vendored 包
   遮蔽官方包」的老问题复发
-- 门槛：**`172 passed, 4 xfailed`（0 failed）**；那 4 个 xfail 是收敛门禁里已登记的
+- 门槛：**`175 passed, 1 xfailed`（0 failed）**；那 1 个 xfail 是收敛门禁里已登记的
   「输出仍依赖输入空白」用例
 
 ### 默认格式化参数

@@ -21,13 +21,14 @@ from tests.sqlfmt_test_helpers import (
 KNOWN_DIVERGENT = {
     # `case/sqltest4_s03` 已删：S7-d 重定基线为「`case` 与首个 `when` 同行」后，
     # 该用例的 canonical 本身即稳定形态，压平输入空白不再改变输出。
-    "comma/sqltest7_s02": "块注释之间的换行被压掉（comma_first=True）",
-    "cte/sqltest2_s01": "where 后行首注释 / 分号布局依赖输入换行",
-    "ddl/sqltest0_s04": "ON COMMIT 刻意分行，属白名单行为，非缺陷",
+    # `comma/sqltest7_s02`、`nested/sqltest3_s01` 已删：S9 把「两段注释不共享一行」
+    # 从组内规则扩到**同层并列的注释组**（`LayoutPass._break_before_sibling_comment`），
+    # 判据由 `prev_.is_newline` 换成「前一段注释自己不带行尾换行」。
+    # `ddl/sqltest0_s04` 已删：S9 把 `ON COMMIT` 白名单改成结构性（命中者一律按分词切开）。
+    "cte/sqltest2_s01": "where 后行首注释 / 分号布局依赖输入换行（列 0 注释口径本身以输入为准）",
     # `dml/sqltest1_s06` 已删：入口切到新实现后它**不再依赖输入换行**
     # （S5a 的 `policy.MULTIWORD_REGEX` 兜底让多个 lateral view 各自分行）——
     # 这项留着会因 XPASS(strict) 反而变红。
-    "nested/sqltest3_s01": "块注释后的换行 / 行首注释对齐依赖输入换行",
 }
 
 

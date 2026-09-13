@@ -2,7 +2,7 @@
 
 官方 `sqlparse` 之上的小侵入**外挂层**（不改官方源码）。
 **唯一目的：格式化结果更美观、符合个人习惯** —— 外挂层 / 收敛性 / 幂等性都是手段。
-门槛：`.venv\Scripts\python.exe -m pytest -q` → **`172 passed, 4 xfailed`（0 failed）**。
+门槛：`.venv\Scripts\python.exe -m pytest -q` → **`175 passed, 1 xfailed`（0 failed）**。
 
 ## 阶段推进协议（常驻：每阶段开工 / 收工都照此执行）
 
