@@ -33,6 +33,11 @@ class LayoutPass(AlignMixin):
 
     join_words = policy.join_words
     by_words = policy.by_words
+    # ALTER TABLE 的动作词：本层出现 ≥2 个时各自成行（见 `_split_alter_actions`）
+    alter_actions = (r"ADD\b", r"DROP\b", r"MODIFY\b", r"CHANGE\b", r"RENAME\b", r"ALTER\b")
+    # 动作子句的**目标缩进列**（绝对值）：`nl(n)` 是「`leading_ws` + n」，因此调用处传差值。
+    # 取 3 = `add` 在既有 `nl(token.value)` 口径下（`leading_ws` 为 6）的落点。
+    alter_action_indent = 3
 
     def __init__(self, options=None):
         opts = dict(options or {})
@@ -1068,11 +1073,51 @@ class LayoutPass(AlignMixin):
                     tidx += 1
             tidx, token = tlist.token_next_by(t=ttypes, idx=tidx)
 
+    def _is_alter_action(self, token):
+        """token 是否是 ALTER TABLE 的动作词（``ADD`` / ``DROP`` / ``MODIFY`` …）。
+
+        必须按 ``normalized`` 自己匹配，不能用 ``Token.match(T.Keyword, …)`` —— 后者是
+        **身份比较**（``self.ttype is ttype``），而 ``DROP`` 的 ttype 是 ``T.Keyword.DDL``，
+        永远匹配不上 ``T.Keyword``（同一个坑在分组层也踩过，见 `MEMORY §5`）。
+        """
+        return any(re.match(pattern, token.normalized) for pattern in self.alter_actions)
+
+    def _split_alter_actions(self, tlist):
+        """ALTER TABLE 的多个动作子句（逗号分隔）各自成行。
+
+        只在**本层出现 ≥2 个动作词**时生效：单动作语句（``alter table X drop column Y``）
+        保持同行 —— 这是既有口径（``ddl/sqltest0_s06`` 第 1 条；``_split_statements`` 里
+        另有一个 ``is_alter_table_drop`` 特例专门保住它）。
+
+        缩进用**固定宽度**而不是 ``nl(token.value)``（右对齐到 ``leading_ws``）：动作词长度
+        不一（``add`` 3 / ``drop`` 4 / ``modify`` 6），右对齐会让混用的子句参差不齐。
+        """
+        heads = [tk for tk in tlist.tokens if not tk.is_whitespace and not self._is_comment(tk)]
+        if len(heads) < 3 or not heads[0].match(T.Keyword.DDL, "ALTER"):
+            return
+
+        actions = [
+            tk
+            for tk in tlist.tokens
+            if not tk.is_whitespace
+            and tk.ttype in T.Keyword
+            and tk is not heads[0]
+            and self._is_alter_action(tk)
+        ]
+        if len(actions) < 2:
+            return
+
+        for tk in actions:
+            tidx = tlist.token_index(tk)
+            tidx, _ = self._remove_prev_newline(tlist, tidx)
+            tlist.insert_before(tidx, self.nl(self.alter_action_indent - self.leading_ws))
+
     def _process_default(self, tlist, stmts=True):
         # 遍历DDL、DML, 遍历self.split_words关键字, 然后遍历子查询
         with indent(self):
             self._split_statements(tlist) if stmts else None
             self._split_kwds(tlist) if stmts else None
+            self._split_alter_actions(tlist) if stmts else None
         # 子组会在后续迭代中进入，不能放到缩进内，比如statement第一次进入，where就会作为子组
         # process any sub-sub statements 在sgroup前插入token后，sgroup会再次进入
         sgroup_prev = None

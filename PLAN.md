@@ -123,7 +123,7 @@ S7 删除 fork 后该 conftest 一并删除。
 
 | 套件 | 命令 | 现状 |
 |---|---|---|
-| 全套件（唯一） | `.venv\Scripts\python.exe -m pytest -q` | `244 passed`（0 failed / 0 xfailed） |
+| 全套件（唯一） | `.venv\Scripts\python.exe -m pytest -q` | `249 passed`（0 failed / 0 xfailed） |
 
 > 迁移期的「主套件（旧 fork）+ 对拍进度条（`tests_migration/`）」两套件已在 S7 随 fork
 > 一起删除（见 §9.4），旧对拍用例并入了 `tests/`。四个门禁（输出回归 / 幂等 / 收敛 / 对拍）
@@ -320,6 +320,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | **S8-d** | MySQL 方言：补齐 11 个类型名、表选项换行锚点、`ON DUPLICATE KEY UPDATE` 合并、`select straight_join` / `= values(col)` 的表达式内锚点 guard | 方言用例 | **234 passed** | ✅ 完成（见 §9.12） |
 | **S11** | DDL 字段列序：约束列查找不得越过 `DEFAULT`（`default null` 的 `null` 是默认值，不是约束） | 通用 DDL 用例 | **239 passed** | ✅ 完成（见 §9.13） |
 | **S12** | LIMIT 子句：`LIMIT m, n` 不按列表展开；`SET` 锚点补词边界（原先子串命中 `OFFSET`，把 `offset` 拆成独立一行） | 通用 DML 用例 | **244 passed** | ✅ 完成（见 §9.14） |
+| **S13** | ALTER 多子句换行：本层 ≥2 个动作词（`ADD`/`DROP`/`MODIFY`…）时各自成行；单动作语句保持同行 | 通用 DDL 用例 | **249 passed** | ✅ 完成（见 §9.15） |
 
 > **方言优先级（用户口径，2026-09-13）**：**Doris / SelectDB 最优先 → 其次 MySQL →
 > Oracle / SQL Server 暂缓**。S8-c（SQL Server）已完成并保留，不回退、也不再往前推
@@ -426,9 +427,10 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 
 ## 9. 断点续做（下一次会话从这里开始）
 
-> 落盘时间：2026-09-13（S12 收工刷新），**S1–S7、S9、S10、S10-b、S8-a~d、S11、S12 全部完成**
+> 落盘时间：2026-09-13（S13 收工刷新），**S1–S7、S9、S10、S10-b、S8-a~d、S11、S12、S13 全部完成**
 > （S7-a~e 五个提交见 §9.4 末尾，S9 见 §9.6，S10 见 §9.7，S10-b 见 §9.8，S8-a 见 §9.9，
-> S8-b 见 §9.10，S8-c 见 §9.11，S8-d 见 §9.12，S11 见 §9.13，S12 见 §9.14），**门槛 `pytest -q` → `244 passed`（0 failed / 0 xfailed）**，
+> S8-b 见 §9.10，S8-c 见 §9.11，S8-d 见 §9.12，S11 见 §9.13，S12 见 §9.14，S13 见 §9.15），
+> **门槛 `pytest -q` → `249 passed`（0 failed / 0 xfailed）**，
 > 收敛门禁 `KNOWN_DIVERGENT` **已清空**，无遗留偏离清单。
 >
 > **本节是「阶段断点卡」**：每阶段的开工点与残留都记在这里。配合
@@ -438,21 +440,20 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 > Oracle / SQL Server 暂缓不做**。**S8-a~d 至此全部收**：Doris/SelectDB 与 MySQL 已适配；
 > SQL Server（S8-c）已完成并保留（不回退、也不再往前推）；Oracle 未开工。
 >
-> **下一步开工点**：方言路线已走完，S11 / S12 已收，剩下的都是**共享缺口**（与方言无关），
+> **下一步开工点**：方言路线已走完，S11 / S12 / S13 已收，剩下的都是**共享缺口**（与方言无关），
 > 各自需先开新阶段卡再动手：
-> 1. **ALTER 多子句换行**：`alter table t add column a int, add column b varchar(10)` 目前整条挤一行。
->    动作词（`ADD`/`DROP`/`MODIFY`/`CHANGE`）**不能**直接进 `split_words` —— 首个动作词也在其列，
->    而 `ddl/sqltest0_s06` 的 `alter table X drop column Y` 期望**同行**（`_split_statements` 里
->    还专门有 `is_alter_table_drop` 特例）→ 只能对「**逗号之后**的动作词」换行，属新设计。
-> 2. 官方判成 `Keyword` 的类型名（Doris 的 `json`/`map`；MySQL 的 `double`/`enum`/`set`/
->    `time`/`year`）—— 覆盖 = 改写官方条目，与 `dialects` 原则冲突，需专门设计再定；
-> 3. S11 的已知边界：`DEFAULT` **之后**写的列级约束词（`id int default 0 primary key`）
->    不再进约束列（判据是「约束列查找止于 `DEFAULT`」，见 §9.13）。
+> 1. **官方判成 `Keyword` 的类型名**（Doris 的 `json`/`map`；MySQL 的 `double`/`enum`/`set`/
+>    `time`/`year`）—— 它们落 `T.Keyword` 而不是 `Name.Builtin`，覆盖 = 改写官方条目，与
+>    `dialects` 原则冲突，需专门设计再定（现状：作类型名时列对齐差一格）；
+> 2. S11 的已知边界：`DEFAULT` **之后**写的列级约束词（`id int default 0 primary key`）
+>    不再进约束列（判据是「约束列查找止于 `DEFAULT`」，见 §9.13）；
+> 3. S12 的已知边界：`SET` 之外还有同类「纯字母锚点」（`AND` 撞 `expand`、`COMMENT` 撞
+>    `comments`、`\bON` 撞 `only`）—— 现无 fixture 触发，登记待观察（见 §9.14）。
 
 ### 9.1 复现当前状态
 
 ```powershell
-.venv\Scripts\python.exe -m pytest -q                   # 门槛：244 passed（0 failed / 0 xfailed）
+.venv\Scripts\python.exe -m pytest -q                   # 门槛：249 passed（0 failed / 0 xfailed）
 .venv\Scripts\python.exe -m pytest -q -k convergence    # 只看收敛门禁（此刻全绿，无 xfail）
 ```
 
@@ -1600,3 +1601,60 @@ select a,
 —— 现无 fixture 触发，本轮**只修有实测现象的 `SET`**，其余登记待观察。
 
 **回退方式**：`git revert <本阶段提交>`（`policy.py` 一处 + `layout.py` 两处 + 新增 fixture 与 `.input.sql`；纯文本、无不可逆动作）。
+
+---
+
+### 9.15 S13 执行卡 + 已收（2026-09-13）：ALTER 多子句换行
+
+**靶子**：断点卡第 1 项的后半 —— 这条 SQL 整行挤在一起（`doris` / `mysql` 相同）：
+
+```sql
+alter table t add column a int, add column b varchar(10), add column c date;
+```
+
+**约束（决定实现形态）**：动作词（`ADD`/`DROP`/`MODIFY`/`CHANGE`/`RENAME`）**不能**直接进
+`policy.split_words` —— 首个动作词前也会换行，而 `ddl/sqltest0_s06` 第 1 条
+`alter table X drop column Y` 期望**同行**（`_split_statements` 里还专门有个 `is_alter_table_drop`
+特例保住 `DROP`）。所以规则必须是「**本层有多个动作子句时**才换行」。
+
+**改动**（`sqlfmt_ext/passes/layout.py`，三处）：
+
+1. 类属性 `alter_actions`（6 个动作词正则）+ `alter_action_indent = 3`；
+2. 新增 `_is_alter_action(token)` —— **按 `normalized` 自己匹配**，不用 `Token.match(T.Keyword, …)`
+   （后者是**身份比较**，`DROP` 的 ttype 是 `T.Keyword.DDL`，永远匹配不上 `T.Keyword` ——
+   同一个坑在分组层踩过，见 `MEMORY §5`）；
+3. 新增 `_split_alter_actions(tlist)`，在 `_process_default` 里紧跟 `_split_kwds` 之后调用：
+   本层以 `ALTER` 开头且**动作词 ≥2 个**时逐个插换行，否则直接 return。
+
+**缩进口径**：用**固定列 3**（调用处传 `self.alter_action_indent - self.leading_ws`，因为 `nl(n)`
+是叠加在 `leading_ws` 上的），而不是 `nl(token.value)` 的右对齐 —— 动作词长度不一（`add` 3 /
+`drop` 4 / `modify` 6），右对齐会让混用的子句参差不齐。
+
+**证据**：
+
+```text
+alter table t
+   add column a int,
+   add column b varchar(10),
+   add column c date;
+
+alter table t
+   modify column a bigint,
+   drop column b,
+   add index idx_a (a);
+```
+
+**不受影响**（逐条实测）：`alter table X drop column Y`（单动作 → 同行）、`alter table X rename to Y`、
+`alter table X add column (a int, b varchar(10))`（单动作 + 括号列表照旧展开）、
+`add column X … comment '…' after Email`（`comment` 仍按既有口径折到列 0）。
+
+**验收**：`.venv\Scripts\python.exe -m pytest -q` → **`249 passed`（0 failed / 0 xfailed）**。
+原 244 项一项没动（`ddl/sqltest0_s06` 三条 ALTER 的输出逐字节不变）；新增 5 项 =
+`tests/fixtures/cases/ddl/sqltest0_s08.sql`（实跑输出定稿）+ `sqltest0_s08.input.sql` 这一用例
+进四个门禁 + `case-integrity` 1。
+
+**残留 / 下一步**：见 §9 头部「下一步开工点」。本轮**未**把 `CONVERT`（`alter table t convert to
+character set utf8`，MySQL 专有）纳入动作词 —— 属已知边界；其余 `add column X comment …` 这类
+子句内部的二次折行沿用 `_split_kwds` 的既有口径，未在本轮重定。
+
+**回退方式**：`git revert <本阶段提交>`（`layout.py` 三处 + 新增 fixture 与 `.input.sql`；纯文本、无不可逆动作）。
