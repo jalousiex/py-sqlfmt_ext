@@ -652,14 +652,40 @@ def _call_head(token):
     return None
 
 
+def _is_create_object_name(tlist, idx):
+    """``idx`` 处是不是 ``create table t (…)`` 的**表名**（其后括号即字段列表）。
+
+    这种括号**不能**当函数调用包成 ``Function``：一旦包上，`_process` 会按组类名分发到
+    ``_process_function``，字段列表的展开分支（``_process_parenthesis``）永远进不去，
+    整条 DDL 就被折成一行（`ddl-column-*-newline-fold` 三个用例）。
+
+    判据取「紧邻的前一个非空白 token 是 ``TABLE`` 关键字（或 ``IF NOT EXISTS``）」——
+    参考对象名（``t``）与限定名（如 ``schema.table``）都适用，且不会误伤
+    ``duplicate key(…)``（前邻是 ``)``）、``distributed by hash(ID)``（前邻是 ``by``）。
+    """
+    scan = idx - 1
+    while scan >= 0 and tlist.tokens[scan].is_whitespace:
+        scan -= 1
+    if scan < 0:
+        return False
+    prev = tlist.tokens[scan]
+    if prev.ttype is None or prev.ttype not in T.Keyword:
+        return False
+    normalized = prev.normalized.upper()
+    return normalized.endswith("TABLE") or normalized == "IF NOT EXISTS"
+
+
 def _wrap_bare_calls(tlist):
-    """把本层「``Name``/``Identifier[Name]`` + 紧随的 ``Parenthesis``」包成 ``sql.Function``。"""
+    """把本层「``Name``/``Identifier[Name]`` + 紧随的 ``Parenthesis``」包成 ``sql.Function``。
+
+    表名后的字段列表除外（见 `_is_create_object_name`）。
+    """
     for sgroup in list(tlist.get_sublists()):
         _wrap_bare_calls(sgroup)
 
     idx = 0
     while idx < len(tlist.tokens):
-        if _call_head(tlist.tokens[idx]) is None:
+        if _call_head(tlist.tokens[idx]) is None or _is_create_object_name(tlist, idx):
             idx += 1
             continue
         scan = idx + 1
