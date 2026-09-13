@@ -417,7 +417,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 
 ```powershell
 .venv\Scripts\python.exe -m pytest tests/ -q            # 170 passed, 6 xfailed（旧 fork，必须保持）
-.venv\Scripts\python.exe -m pytest tests_migration/ -q  # 29 passed, 2 xfailed（新外挂，进度条；另有 1 条有意偏离是断言项）
+.venv\Scripts\python.exe -m pytest tests_migration/ -q  # 31 passed（新外挂，KNOWN_DIFF 已清空；另有 1 条有意偏离是断言项）
 .venv\Scripts\python.exe _tmp_check.py                  # 逐用例精确 diff（当前唯一主力诊断）
 ```
 
