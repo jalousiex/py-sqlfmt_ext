@@ -73,10 +73,10 @@ sqlfmt.py → sqlfmt_ext.format_statements()
   每处 docstring 都写明「为什么需要」与「为什么放这个位置」）
 - `sqlfmt_ext/lexer.py` · `sqlfmt_ext/stack.py` — `DialectLexer`；复用官方 `build_filter_stack` 后**换装 / 摘除** filter
 - `sqlfmt_ext/filters/` — 替换官方的空白 / 操作符 filter
-- `sqlfmt_ext/policy.py` — **通用**关键字与多词关键字口径（含 `DATETIME` 这类官方缺失的类型名）
-- `sqlfmt_ext/dialects.py` — **方言的唯一真身**：`Dialect(name, lexer_patches, extra_split_words, notes)`。
-  分词层（要不要打词表补丁）、布局层（要不要在 `DISTRIBUTED BY` 等词前换行）都从这里取声明；
-  未知方言由 `options` 直接报错（不再静默降级）
+- `sqlfmt_ext/policy.py` — **通用**关键字与多词关键字口径（`LATERAL VIEW`、`OVER(` 的优先级补丁等）
+- `sqlfmt_ext/dialects.py` — **方言的唯一真身**：`Dialect(name, lexer_patches, extra_keywords,
+  extra_split_words, notes)`。分词层（方言关键字与**类型名**）、布局层（`DISTRIBUTED BY` 等换行锚点）
+  都从这里取声明；未知方言由 `options` 直接报错（不再静默降级）
 - `sqlfmt_ext/options.py` — 默认参数与校验（扩展项 `align_list` / `dialect`）
 
 `PLAN.md` 记录了「官方 0.6.0 与旧 fork 的语义差异清单（U1–U16）」、每处补偿的落点与

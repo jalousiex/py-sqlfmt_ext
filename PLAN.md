@@ -123,7 +123,7 @@ S7 删除 fork 后该 conftest 一并删除。
 
 | 套件 | 命令 | 现状 |
 |---|---|---|
-| 全套件（唯一） | `.venv\Scripts\python.exe -m pytest -q` | `185 passed`（0 failed / 0 xfailed） |
+| 全套件（唯一） | `.venv\Scripts\python.exe -m pytest -q` | `192 passed`（0 failed / 0 xfailed） |
 
 > 迁移期的「主套件（旧 fork）+ 对拍进度条（`tests_migration/`）」两套件已在 S7 随 fork
 > 一起删除（见 §9.4），旧对拍用例并入了 `tests/`。四个门禁（输出回归 / 幂等 / 收敛 / 对拍）
@@ -315,7 +315,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | **S10** | 「注释保持列 0」判据结构化：收窄到**语句前导注释**，语句尾注释按层级归一 | 收敛门禁 1 xfail → 0 | **176 passed / 0 xfailed** | ✅ 完成（见 §9.7） |
 | **S10-b** | 收尾注释改「按所在层级对齐」；`;` 作为分段终止符**一律顶列 0**（前面不特殊处理） | 口径修订 | **176 passed / 0 xfailed** | ✅ 完成（见 §9.8） |
 | **S8-a** | 方言层收成**单一真身**：`dialects` 登记表 + `lexer`/`LayoutPass`/`grouping` 都从它取；未知方言报错；建 `dialect` topic | 方言用例 | **185 passed** | ✅ 完成（见 §9.9） |
-| **S8-b** | 官方缺失关键字按 **MySQL 兼容**口径追加声明 | 方言用例 | — | ⏳ 待做 |
+| **S8-b** | 方言词表归位（分词层词表也进 `dialects`）+ 补齐 20 个 Doris 类型名 | 方言用例 | **192 passed** | ✅ 完成（见 §9.10） |
 | **S8-c** | SQL Server：`GO` 批分隔符、`[ ]` 标识符、`TOP`、`WITH(NOLOCK)` | 方言用例 | — | ⏳ 待做 |
 
 > 对拍列格式：`passed / xfailed`。
@@ -419,21 +419,21 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 
 ## 9. 断点续做（下一次会话从这里开始）
 
-> 落盘时间：2026-09-13（S8-a 收工刷新），**S1–S7、S9、S10、S10-b、S8-a 全部完成**（S7-a~e 五个
-> 提交见 §9.4 末尾，S9 见 §9.6，S10 见 §9.7，S10-b 见 §9.8，S8-a 见 §9.9），
-> **门槛 `pytest -q` → `185 passed`（0 failed / 0 xfailed）**，收敛门禁 `KNOWN_DIVERGENT` **已清空**，
-> 无遗留偏离清单。
+> 落盘时间：2026-09-13（S8-b 收工刷新），**S1–S7、S9、S10、S10-b、S8-a、S8-b 全部完成**
+> （S7-a~e 五个提交见 §9.4 末尾，S9 见 §9.6，S10 见 §9.7，S10-b 见 §9.8，S8-a 见 §9.9，
+> S8-b 见 §9.10），**门槛 `pytest -q` → `192 passed`（0 failed / 0 xfailed）**，
+> 收敛门禁 `KNOWN_DIVERGENT` **已清空**，无遗留偏离清单。
 >
 > **本节是「阶段断点卡」**：每阶段的开工点与残留都记在这里。配合
 > [AGENTS.md](AGENTS.md) 的「**阶段推进协议**」（开工四步 / 收工六步 / 汇报格式）使用。
 >
-> **下一步开工点**：**S8-b**（官方缺失关键字按 MySQL 兼容口径追加声明）—— 目前只有一条轮廓，
-> 开工前先按 §9.9 的形态补一张执行卡；S8-c（SQL Server）在其后。
+> **下一步开工点**：**S8-c（SQL Server 适配）**：`GO` 批分隔符、`[ ]` 标识符、`TOP`、
+> `WITH(NOLOCK)` 等 —— 开工前先按 §9.9 / §9.10 的形态补一张执行卡。
 
 ### 9.1 复现当前状态
 
 ```powershell
-.venv\Scripts\python.exe -m pytest -q                   # 门槛：185 passed（0 failed / 0 xfailed）
+.venv\Scripts\python.exe -m pytest -q                   # 门槛：192 passed（0 failed / 0 xfailed）
 .venv\Scripts\python.exe -m pytest -q -k convergence    # 只看收敛门禁（此刻全绿，无 xfail）
 ```
 
@@ -1132,3 +1132,116 @@ print(format_statements("..."))
   暂按「本项目通用增强」处理，S8-b 再评估。
 
 **回退方式**：`git revert <本阶段提交>`（7 处文本改动 + 新增 topic/测试；纯文本、无不可逆动作）。
+
+---
+
+### 9.10 S8-b 执行卡（方言词表归位 + Doris 类型名补齐，2026-09-13 开工）
+
+**背景**：S8-a 只把**换行锚点词**收进了 `dialects`；**分词层的方言词表还留在 `policy`**
+（`KEYWORDS_DORIS` / `KEYWORDS_TYPES`，全局、与方言无关），`lexer` 直接读 `policy`。S8-b 把这条也收进去，
+并补齐 Doris/SelectDB 在官方 0.6.0 下**缺失的类型名**。
+
+**勘测证据（实测，本轮已跑）**：一条含 Doris 常用类型的建表语句，**列对齐直接错乱**：
+
+```sql
+create table dw.t (id int64, name varchar(20), v1 string, v2 datev2, v3 datetimev2(3), v4 decimalv3(10, 2), v5 largeint, v6 bitmap, v7 json);
+```
+
+```text
+       id int64                    ,   ← 字段名与类型挤在一起（被粘成同一个 Identifier）
+       name        varchar(20)     ,   ← 正常
+       v1          string          ,   ← 正常
+       v2 datev2                   ,   ← 异常
+       v3          datetimev2(3)   ,   ← 异常
+       v4          decimalv3(10, 2),   ← 异常
+       v5 largeint                 ,   ← 异常
+       v6 bitmap                   ,   ← 异常
+       v7 json                         ← 正常
+```
+
+token 级证据：`int64` / `datev2` / `datetimev2` / `decimalv3` / `largeint` / `bitmap` 全部落成
+**普通 `T.Name`**，而 `varchar` / `string` 是 `T.Name.Builtin`、`json` 是 `T.Keyword` —— 前者于是被
+`group_identifier` 与字段名**粘成一个 `Identifier`**，`_create_field_lines` 的类型列取不到 token，
+**整列基准错**（与 U16 完全同一机理，U16 只补了 `DATETIME` 一个词）。
+
+**官方 0.6.0 已有的内置类型**（43 个）：`ARRAY BIGINT BINARY BIT BLOB BOOLEAN CHAR CHARACTER DATE DEC
+DECIMAL FILE_TYPE FLOAT INT INT8 INTEGER INTERVAL LONG NATURALN NUMBER NUMERIC NVARCHAR PLS_INTEGER
+POSITIVE POSITIVEN REAL ROWID ROWLABEL ROWNUM SERIAL SERIAL8 SIGNED SIGNTYPE SIMPLE_DOUBLE SIMPLE_FLOAT
+SIMPLE_INTEGER SMALLINT SYS_REFCURSOR TEXT TINYINT UNSIGNED UROWID UTL_FILE VARCHAR VARCHAR2 VARYING`
+（注意：**没有** `DOUBLE`、`INT16/32/64/128`、`DATEV2`、`DATETIME`、`DATETIMEV2`、`DECIMALV3`、`LARGEINT`、
+`BITMAP`、`HLL`、`JSONB`、`VARIANT`、`QUANTILE_STATE`、`AGG_STATE`、`IPV4`、`IPV6`、`MAP`(官方是 Keyword)、`STRUCT`）
+
+**待补清单**（→ `T.Name.Builtin`）：`INT16` `INT32` `INT64` `INT128` `LARGEINT` `DOUBLE` `DATEV2`
+`DATETIMEV2` `DECIMALV2` `DECIMALV3` `BITMAP` `HLL` `JSONB` `VARIANT` `QUANTILE_STATE` `AGG_STATE`
+`IPV4` `IPV6`（`DATETIME` 已在 `KEYWORDS_TYPES`；`MAP` 官方已是 `Keyword`，不动）。
+
+**本轮做法**：
+
+1. `Dialect` 增加 `extra_keywords: dict`（词 → ttype）；`lexer` 按方言注入
+   （内容 = 现有 `KEYWORDS_DORIS` + 上面的类型名）。
+2. 把 `policy.KEYWORDS_DORIS` / `policy.KEYWORDS_TYPES` **迁入** `dialects` 的 Doris 声明 ——
+   `policy` 不再持有方言词（S8-a 只迁走了锚点词，这次补齐分词层）。
+3. 按清单补齐类型名。
+
+**验收**：
+
+- 上面那条建表语句的**列对齐正确**（类型列起始一致，字段名与类型不再是同一个 `Identifier`）；
+- 新增 `tests/fixtures/cases/dialect/sqltest1_s01.sql` 把它固化（实跑输出定稿）+ `test_sqlfmt_dialect.py` 加断言；
+- `dialect=None` 下 `int64` 等仍是普通 `Name`（开关仍只在 doris/selectdb 生效）；
+- 门禁：原 185 项 + 新增。**唯一已知影响面**是 `dml/sqltest8_s01`（含 `ARRAY<VARIANT>`）——
+  `VARIANT` 变 `Builtin` 后该用例输出若有变化，逐条判断是「修正」还是「回归」。
+
+**风险 / 雷区**：
+
+- `VARIANT` 已在 fixture 里（见上）。
+- `DOUBLE` / `MAP` 等若被当**列名**会误判（MySQL 里它们是保留字，作列名须反引号）→ 风险低，
+  但加词后必须全量跑门禁。
+- 迁移词表时 `policy` 里若还有别处引用 → 已 grep 确认只有 `lexer.py` 两行（`add_keywords`）。
+
+**回退方式**：`git revert <本阶段提交>`（`dialects.py` / `lexer.py` / `policy.py` / 测试与 fixture；
+纯文本、无不可逆动作）。
+
+#### 9.10.1 S8-b 已收（2026-09-13）
+
+**改动**（5 处）：
+
+| 文件 | 改动 |
+|---|---|
+| `dialects.py` | `Dialect` 增加 `extra_keywords`（`((word, ttype), ...)`）；Doris/SelectDB 声明新增 `_DORIS_MODEL_KEYWORDS`（`BUCKETS`/`AUTO`/`PROPERTIES`）与 `_DORIS_TYPE_NAMES`（20 个类型名），合成 `_DORIS_EXTRA_KEYWORDS` |
+| `lexer.py` | `add_keywords(policy.KEYWORDS_DORIS / KEYWORDS_TYPES)` → `add_keywords(dict(dialect.extra_keywords))`（分词词表也走方言声明） |
+| `policy.py` | 删 `KEYWORDS_DORIS` / `KEYWORDS_TYPES`（方言词不再散落在通用层），docstring 标明去向 |
+| `tests/` | 新增 `cases/dialect/sqltest1_s01.sql`（Doris 全类型建表）+ `test_sqlfmt_dialect.py` 加 2 条断言 |
+
+**补齐的 20 个类型名**：`AGG_STATE BITMAP DATETIME DATEV2 DATETIMEV2 DECIMALV2 DECIMALV3 DOUBLE
+HLL INT16 INT32 INT64 INT128 IPV4 IPV6 JSONB LARGEINT QUANTILE_STATE STRUCT VARIANT`
+（`DATETIME` 是 U16 补过的，本次一并归位到方言声明）。
+
+**效果（证据）**：勘测里那条建表语句从「字段名与类型挤在一起、列基准错」变成**列对齐正确**：
+
+```text
+       id       int64           ,
+       name     varchar(20)     ,
+       v1       string          ,
+       v2       datev2          ,
+       v3       datetimev2(3)   ,
+       v4       decimalv3(10, 2),
+       v5       largeint        ,
+       v6       bitmap          ,
+       v7 jsonb
+```
+
+**`dialect=None` 仍错乱**（`id int64`、`v2 datev2`… 粘在一起）→ 开关只在 doris/selectdb 生效，
+这条已写成断言。
+
+**验收**：`.venv\Scripts\python.exe -m pytest -q` → **`192 passed`（0 failed / 0 xfailed）**；
+原 185 项一项没动；新增 7 项（新 fixture 进三个门禁 + 2 条断言，另加 case-integrity 的 1 项）；
+已知影响面 `dml/sqltest8_s01`（含 `ARRAY<VARIANT>`）**输出无变化** ✓。
+
+**残留 / 下一步**：
+
+- `json` 在官方词表里是 `T.Keyword`（不是 `Name.Builtin`）→ **未覆盖**：覆盖它等于「改写官方已有
+  条目」，与 `dialects.py` 的原则冲突。真要用（Doris 里 `json` 是类型名，行内对齐会差一格）需另开一段。
+- `MAP` 同理由（官方是 `Keyword`）未动。
+- 下一步 **S8-c（SQL Server 适配）**：`GO` 批分隔符、`[ ]` 标识符、`TOP`、`WITH(NOLOCK)`。
+
+**回退方式**：`git revert <本阶段提交>`（5 处文本改动 + 新增 fixture/断言；纯文本、无不可逆动作）。

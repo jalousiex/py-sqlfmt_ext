@@ -8,7 +8,8 @@
 官方 0.6.0 的分词表与本项目历史输出存在少数差异，逐条列在此处以保证输出稳定：
 
 * ``LATERAL VIEW <UDTF>`` 合并为单个 Keyword（多词关键字，避免被拆成两行）；
-* Doris/SelectDB 的模型定义关键字（官方没有，按 MySQL 兼容适配）；
+* Doris/SelectDB 的模型定义关键字与类型名 → 已收进 `dialects.py`（``Dialect.extra_keywords``），
+  本模块不再持有方言词；
 * ``OVER (`` 判回 Keyword（官方词表里有 ``OVER``，但被更靠前的「函数名」正则
   ``[A-ZÀ-Ü]\\w*(?=\\()`` 抢先判成 ``Name``，导致 ``sql.Over`` 永远分不出来）。
 
@@ -88,23 +89,9 @@ PRECEDENCE_REGEX = (
 # 官方「函数名」正则之前的锚点
 PRECEDENCE_ANCHORS = (r"(?<=\.)[A-ZÀ-Ü]\w*",)
 
-# Doris/SelectDB 词表：官方没有，按 MySQL 兼容适配
-KEYWORDS_DORIS = {
-    "BUCKETS": T.Keyword,
-    "AUTO": T.Keyword,
-    "PROPERTIES": T.Keyword,
-}
-
-# 数据类型名 → ``T.Name.Builtin``。官方词表里的内置类型（CHAR/INT/VARCHAR/DECIMAL…）
-# 与旧 fork 完全一致，**缺的是**：旧 fork 的关键字正则不要求词尾边界，``DATE`` 会把
-# ``DATETIME`` 一并命中，所以 fork 下 ``datetime`` 是 ``Name.Builtin``；官方是整词匹配，
-# ``DATETIME`` 落成普通 ``Name`` —— 于是 DDL 里「字段名 + 类型名」被 ``group_identifier``
-# 粘成一个 ``Identifier``，``_create_field_lines`` 的类型列取不到 token，整条字段对齐的
-# 列基准全错（``ddl/sqltest0_s01``、``ddl/sqltest0_s02``，两例都只差这一个词）。
-# 以后遇到同类「fork 靠前缀意外命中」的类型（``INT64``/``INT32``/``DATE32``…）照此加一条。
-KEYWORDS_TYPES = {
-    "DATETIME": T.Name.Builtin,
-}
+# 方言关键字与类型名（Doris 的 ``BUCKETS`` / ``PROPERTIES`` / ``INT64`` / ``DATEV2`` …）
+# **不在这里** —— 它们已收进 `dialects.py` 的方言声明（``Dialect.extra_keywords``）。
+# 本模块只保留**通用**词表与分词口径，见 `PLAN §9.10`。
 
 # 官方多词关键字区块的定位锚点（依次尝试，取第一个命中的）
 ANCHOR_PATTERNS = (

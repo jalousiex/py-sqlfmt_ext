@@ -11,20 +11,63 @@
 
 from dataclasses import dataclass
 
+from sqlparse import tokens as T
+
 
 @dataclass(frozen=True)
 class Dialect:
     """一个方言的全部声明（声明式，消费方各自取需要的那一项）。"""
 
     name: str
-    # 是否注入 ``policy`` 的分词补丁（词表 / 多词关键字 / 优先级补丁）
+    # 是否注入 ``policy`` 的分词补丁（多词关键字 / 优先级补丁等）
     lexer_patches: bool = False
+    # 追加到官方分词词表的条目：``((word, ttype), ...)``（关键字与类型名都走这里）
+    extra_keywords: tuple = ()
     # 追加到 ``LayoutPass.split_words`` 的换行锚点词（只影响换行，不影响分词）
     extra_split_words: tuple = ()
     notes: str = ""
 
 
 # --- Doris / SelectDB -------------------------------------------------------
+
+# 分词层词表补丁（官方 0.6.0 缺失，按 MySQL 兼容适配）：
+#
+# * 建表模型定义关键字：``BUCKETS`` / ``AUTO`` / ``PROPERTIES``；
+# * **数据类型名** —— 这条必须补：官方是**整词匹配**，而 Doris 的类型名（``INT64`` /
+#   ``DATEV2`` / ``DATETIMEV2`` / ``DECIMALV3`` / ``LARGEINT`` / ``BITMAP`` …）都不在官方
+#   词表里，于是落成普通 ``Name``，被 ``group_identifier`` 与字段名**粘成一个 ``Identifier``**，
+#   ``_create_field_lines`` 的类型列取不到 token → DDL 字段对齐的**列基准全错**
+#   （U16 记的就是这个机理，当时只补了 ``DATETIME`` 一个词；S8-b 一次性补齐同类）。
+#   旧 fork 之所以没暴露：它的关键字正则不要求词尾边界，``DATE`` / ``INT`` 会把
+#   ``DATETIME`` / ``INT64`` 前缀命中。
+_DORIS_MODEL_KEYWORDS = ("BUCKETS", "AUTO", "PROPERTIES")
+
+_DORIS_TYPE_NAMES = (
+    "AGG_STATE",
+    "BITMAP",
+    "DATETIME",
+    "DATEV2",
+    "DATETIMEV2",
+    "DECIMALV2",
+    "DECIMALV3",
+    "DOUBLE",
+    "HLL",
+    "INT16",
+    "INT32",
+    "INT64",
+    "INT128",
+    "IPV4",
+    "IPV6",
+    "JSONB",
+    "LARGEINT",
+    "QUANTILE_STATE",
+    "STRUCT",
+    "VARIANT",
+)
+
+_DORIS_EXTRA_KEYWORDS = tuple((w, T.Keyword) for w in _DORIS_MODEL_KEYWORDS) + tuple(
+    (w, T.Name.Builtin) for w in _DORIS_TYPE_NAMES
+)
 
 # 官方词表与换行锚点都缺这些「建表模型定义」关键字，按 MySQL 兼容适配。
 # 这里只声明需要参与换行的整段关键字；多词合并仍由 ``policy`` 的分词补丁负责
@@ -42,6 +85,7 @@ _DORIS_SPLIT_WORDS = (
 _DORIS = Dialect(
     name="doris",
     lexer_patches=True,
+    extra_keywords=_DORIS_EXTRA_KEYWORDS,
     extra_split_words=_DORIS_SPLIT_WORDS,
     notes="SelectDB 同族；官方缺失，按 MySQL 兼容适配",
 )
@@ -53,6 +97,7 @@ DIALECTS = {
     "selectdb": Dialect(
         name="selectdb",
         lexer_patches=True,
+        extra_keywords=_DORIS_EXTRA_KEYWORDS,
         extra_split_words=_DORIS_SPLIT_WORDS,
         notes="与 doris 同族，共用声明",
     ),

@@ -47,3 +47,42 @@ def test_generic_dialect_does_not_apply_doris_keywords():
 def test_unknown_dialect_raises():
     with pytest.raises(SQLParseError, match="unknown dialect"):
         format_with_options(DORIS_DDL, dialect="typo")
+
+
+# --- S8-b：方言类型名（官方 0.6.0 词表缺失，S8-b 补齐）---------------------------
+
+DORIS_TYPES_DDL = (
+    "create table dw.t (id int64, name varchar(20), v1 string, v2 datev2, v3 datetimev2(3), "
+    "v4 decimalv3(10, 2), v5 largeint, v6 bitmap, v7 jsonb);"
+)
+
+DORIS_TYPES_EXPECTED = (
+    "create table dw.t (\n"
+    "       id       int64           ,\n"
+    "       name     varchar(20)     ,\n"
+    "       v1       string          ,\n"
+    "       v2       datev2          ,\n"
+    "       v3       datetimev2(3)   ,\n"
+    "       v4       decimalv3(10, 2),\n"
+    "       v5       largeint        ,\n"
+    "       v6       bitmap          ,\n"
+    "       v7 jsonb\n"
+    ");"
+)
+
+
+def test_doris_type_names_keep_ddl_columns_aligned():
+    """Doris 类型名（int64 / datev2 / datetimev2 / decimalv3 / largeint / bitmap）必须与字段名分开。
+
+    官方 0.6.0 词表缺这些词 → 落成普通 ``Name`` → 被 ``group_identifier`` 与字段名粘成一个
+    ``Identifier`` → ``_create_field_lines`` 的类型列取不到 token → 整条 DDL 的列基准错
+    （U16 的机理，当时只补了 ``DATETIME``）。
+    """
+    assert format_with_options(DORIS_TYPES_DDL, dialect="doris") == DORIS_TYPES_EXPECTED
+
+
+def test_generic_dialect_keeps_doris_type_names_as_plain_names():
+    """`dialect=None` 不补词表：字段名与类型名仍被粘在一起（开关只在 doris/selectdb 生效）。"""
+    generic = format_with_options(DORIS_TYPES_DDL, dialect=None)
+    assert "id int64" in generic
+    assert generic != format_with_options(DORIS_TYPES_DDL, dialect="doris")
