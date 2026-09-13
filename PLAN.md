@@ -123,7 +123,7 @@ S7 删除 fork 后该 conftest 一并删除。
 
 | 套件 | 命令 | 现状 |
 |---|---|---|
-| 全套件（唯一） | `.venv\Scripts\python.exe -m pytest -q` | `239 passed`（0 failed / 0 xfailed） |
+| 全套件（唯一） | `.venv\Scripts\python.exe -m pytest -q` | `244 passed`（0 failed / 0 xfailed） |
 
 > 迁移期的「主套件（旧 fork）+ 对拍进度条（`tests_migration/`）」两套件已在 S7 随 fork
 > 一起删除（见 §9.4），旧对拍用例并入了 `tests/`。四个门禁（输出回归 / 幂等 / 收敛 / 对拍）
@@ -319,6 +319,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | **S8-c** | SQL Server：`GO` 批分隔符、`[ ]` 标识符、`TOP`、`WITH(NOLOCK)` | 方言用例 | **215 passed** | ✅ 完成（见 §9.11） |
 | **S8-d** | MySQL 方言：补齐 11 个类型名、表选项换行锚点、`ON DUPLICATE KEY UPDATE` 合并、`select straight_join` / `= values(col)` 的表达式内锚点 guard | 方言用例 | **234 passed** | ✅ 完成（见 §9.12） |
 | **S11** | DDL 字段列序：约束列查找不得越过 `DEFAULT`（`default null` 的 `null` 是默认值，不是约束） | 通用 DDL 用例 | **239 passed** | ✅ 完成（见 §9.13） |
+| **S12** | LIMIT 子句：`LIMIT m, n` 不按列表展开；`SET` 锚点补词边界（原先子串命中 `OFFSET`，把 `offset` 拆成独立一行） | 通用 DML 用例 | **244 passed** | ✅ 完成（见 §9.14） |
 
 > **方言优先级（用户口径，2026-09-13）**：**Doris / SelectDB 最优先 → 其次 MySQL →
 > Oracle / SQL Server 暂缓**。S8-c（SQL Server）已完成并保留，不回退、也不再往前推
@@ -425,9 +426,9 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 
 ## 9. 断点续做（下一次会话从这里开始）
 
-> 落盘时间：2026-09-13（S11 收工刷新），**S1–S7、S9、S10、S10-b、S8-a~d、S11 全部完成**
+> 落盘时间：2026-09-13（S12 收工刷新），**S1–S7、S9、S10、S10-b、S8-a~d、S11、S12 全部完成**
 > （S7-a~e 五个提交见 §9.4 末尾，S9 见 §9.6，S10 见 §9.7，S10-b 见 §9.8，S8-a 见 §9.9，
-> S8-b 见 §9.10，S8-c 见 §9.11，S8-d 见 §9.12，S11 见 §9.13），**门槛 `pytest -q` → `239 passed`（0 failed / 0 xfailed）**，
+> S8-b 见 §9.10，S8-c 见 §9.11，S8-d 见 §9.12，S11 见 §9.13，S12 见 §9.14），**门槛 `pytest -q` → `244 passed`（0 failed / 0 xfailed）**，
 > 收敛门禁 `KNOWN_DIVERGENT` **已清空**，无遗留偏离清单。
 >
 > **本节是「阶段断点卡」**：每阶段的开工点与残留都记在这里。配合
@@ -437,9 +438,12 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 > Oracle / SQL Server 暂缓不做**。**S8-a~d 至此全部收**：Doris/SelectDB 与 MySQL 已适配；
 > SQL Server（S8-c）已完成并保留（不回退、也不再往前推）；Oracle 未开工。
 >
-> **下一步开工点**：方言路线已走完，S11 已收，剩下的都是**共享缺口**（同时影响 Doris/MySQL），
+> **下一步开工点**：方言路线已走完，S11 / S12 已收，剩下的都是**共享缺口**（与方言无关），
 > 各自需先开新阶段卡再动手：
-> 1. `LIMIT m, n` 被逗号折行、ALTER 多子句不换行；
+> 1. **ALTER 多子句换行**：`alter table t add column a int, add column b varchar(10)` 目前整条挤一行。
+>    动作词（`ADD`/`DROP`/`MODIFY`/`CHANGE`）**不能**直接进 `split_words` —— 首个动作词也在其列，
+>    而 `ddl/sqltest0_s06` 的 `alter table X drop column Y` 期望**同行**（`_split_statements` 里
+>    还专门有 `is_alter_table_drop` 特例）→ 只能对「**逗号之后**的动作词」换行，属新设计。
 > 2. 官方判成 `Keyword` 的类型名（Doris 的 `json`/`map`；MySQL 的 `double`/`enum`/`set`/
 >    `time`/`year`）—— 覆盖 = 改写官方条目，与 `dialects` 原则冲突，需专门设计再定；
 > 3. S11 的已知边界：`DEFAULT` **之后**写的列级约束词（`id int default 0 primary key`）
@@ -448,7 +452,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 ### 9.1 复现当前状态
 
 ```powershell
-.venv\Scripts\python.exe -m pytest -q                   # 门槛：239 passed（0 failed / 0 xfailed）
+.venv\Scripts\python.exe -m pytest -q                   # 门槛：244 passed（0 failed / 0 xfailed）
 .venv\Scripts\python.exe -m pytest -q -k convergence    # 只看收敛门禁（此刻全绿，无 xfail）
 ```
 
@@ -1538,3 +1542,61 @@ create table t (
 **残留 / 下一步**：见 §9 头部「下一步开工点」（`LIMIT m, n` 折行 / ALTER 多子句、官方 `Keyword` 类型名）。
 
 **回退方式**：`git revert <本阶段提交>`（`align.py` 一处 + 新增 fixture 与 `.input.sql`；纯文本、无不可逆动作）。
+
+---
+
+### 9.14 S12 执行卡 + 已收（2026-09-13）：LIMIT 子句 —— `m, n` 不展开、`OFFSET` 不被误判为子句头
+
+**靶子**：`§9.12.1` 残留第 2 条的前半（`LIMIT m, n` 被逗号折行）。实测两个现象（`doris` / `mysql` 相同）：
+
+```text
+ limit 10,          ← LIMIT 后的 IdentifierList 被逐项展开
+       20;
+ limit 20
+offset 10;          ← offset 顶列 0 独占一行
+```
+
+**根因（两处，独立）**：
+
+| # | 现象 | 根因 |
+|---|---|---|
+| ① | `limit 10,` / `20;` | 官方 `group_identifier_list` 把 `10, 20` 收成 `IdentifierList`，`_process_identifierlist` 于是按列表逐项换行 —— 但 `m, n` 是「偏移量, 行数」参数对，不是列表 |
+| ② | `offset 10;` 顶列 0 | **`SET` 锚点在做子串匹配**：`Token.match` 对每条锚点做 `re.search`（不是整词），裸 `SET` 在 `OFFSET` 内部命中 → `offset` 被当成行首关键字换行（`token_indent` 取 `offset`，`nl(-6)` 算出纯换行 → 顶列 0）。同族：`CHARSET` 也含 `set`（MySQL 表选项换行此前是**巧合**命中的） |
+
+**改动（两处）**：
+
+1. `sqlfmt_ext/policy.py`：`split_words` 里 `"SET"` → `r"\bSET\b"`。`INSERT … SET` 是独立词、仍照常换行 ✓；
+   `OFFSET` / `CHARSET` 不再被误命中（MySQL 的 `DEFAULT CHARSET` / `CHARSET` 有自己的方言锚点，不依赖这条）。
+2. `sqlfmt_ext/passes/layout.py`：新增 `LayoutPass._is_limit_list`（父层紧邻的前一个非空白 token 是 `LIMIT` 关键字），
+   在 `_process_identifierlist` 里照 `_is_lateral_view_list` 的既有手法早退：`_collapse_newlines` + `_process_default(stmts=False)`。
+
+**证据（`doris` / `mysql` 逐字节相同）**：
+
+```text
+select a,
+       b
+  from t
+ where x = 1
+ order by a
+ limit 20 offset 10;
+
+select a,
+       b
+  from t
+ limit 10, 20;
+```
+
+冒烟（改动前后对照）：`select * from t limit 10` ✓、`select * from t offset 10` ✓（原为顶列换行）、
+`update t set a = 1` ✓（`set` 仍换行）、`insert into t set a = 1` ✓、`insert into t (a, b) values (1, 2)` ✓（不受影响）。
+
+**验收**：`.venv\Scripts\python.exe -m pytest -q` → **`244 passed`（0 failed / 0 xfailed）**。
+原 239 项一项没动；新增 5 项 = `tests/fixtures/cases/dml/sqltest1_s09.sql`（实跑输出定稿）+
+`sqltest1_s09.input.sql`（单行原始输入，两条语句）这一用例进四个门禁 + `case-integrity` 1。
+
+**残留 / 下一步**：断点卡第 1 项的后半 **ALTER 多子句换行**仍未做 —— 它需要新设计（动作词只能对
+「**逗号之后**」的那个换行，不能直接进 `split_words`，否则 `alter table X drop column Y` 这类单动作
+语句会跟着折行，破坏 `ddl/sqltest0_s06`），见 §9 头部「下一步开工点」。另：`SET` 之外还有同类
+「纯字母锚点」（`AND` 会在 `expand` 里命中、`COMMENT` 会在 `comments` 里命中、`\bON` 会在 `only` 里命中）
+—— 现无 fixture 触发，本轮**只修有实测现象的 `SET`**，其余登记待观察。
+
+**回退方式**：`git revert <本阶段提交>`（`policy.py` 一处 + `layout.py` 两处 + 新增 fixture 与 `.input.sql`；纯文本、无不可逆动作）。

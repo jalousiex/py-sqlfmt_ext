@@ -50,7 +50,11 @@ split_words = (
     "LIMIT",
     "UNION",
     "VALUES",
-    "SET",
+    # 词边界必须显式写：``Token.match`` 对每条锚点做 ``re.search``（非整词），
+    # 裸 ``SET`` 会在 ``OFFSET`` / ``CHARSET`` 内部命中 → 关键字被误判成子句头、
+    # 换行落到 ``offset`` 之前（``limit 20⏎offset 10``）。``INSERT … SET`` 是独立词，
+    # 加了边界仍照常换行。
+    r"\bSET\b",
     "BETWEEN",
     "EXCEPT",
     "COMMENT",

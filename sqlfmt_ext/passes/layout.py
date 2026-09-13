@@ -202,6 +202,20 @@ class LayoutPass(AlignMixin):
             return bool(prev2_ and prev2_.match(T.Keyword, "LATERAL"))
         return bool(prev_ and prev_.match(T.Keyword, r"LATERAL\s+VIEW", regex=True))
 
+    @staticmethod
+    def _is_limit_list(tlist):
+        """判断 IdentifierList 是否是 ``LIMIT m, n`` 的参数对。
+
+        ``m, n`` 里的逗号是「偏移量, 行数」的分隔，不是列表项分隔 —— 逐项展开会把
+        一行 SQL 拆成两行（``limit 10,⏎20``），与 ``limit 20 offset 10`` 也读不到一起。
+        """
+        plist = tlist.parent
+        if not plist:
+            return False
+        pidx = plist.token_index(tlist)
+        _, prev_ = plist.token_prev(pidx, skip_cm=True)
+        return bool(prev_ and prev_.match(T.Keyword, "LIMIT"))
+
     def _take_comments_before(self, tlist, tidx):
         """移除 tidx 前连续空白和注释，返回原顺序的注释。"""
         comments = []
@@ -351,6 +365,12 @@ class LayoutPass(AlignMixin):
         # lateral view 后的列列表不做换行对齐，保持同行
         if self._is_lateral_view_list(tlist):
             # lateral view 后的列列表保持同行，仅折叠已有换行
+            self._collapse_newlines(tlist)
+            self._process_default(tlist, stmts=False)
+            return
+
+        # LIMIT m, n：是「偏移量, 行数」参数对，不按列表逐项展开
+        if self._is_limit_list(tlist):
             self._collapse_newlines(tlist)
             self._process_default(tlist, stmts=False)
             return
