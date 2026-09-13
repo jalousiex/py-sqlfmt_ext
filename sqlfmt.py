@@ -10,7 +10,10 @@ python.exe _DBeaverData/sqlfmt.py ${file} -k lower -a --indent_width 4 -s --wrap
 import argparse
 import os
 
-import sqlparse as sp
+# 入口已切到新实现（官方 sqlparse 0.6.0 + 本项目补偿层 `sqlfmt_ext`）。
+# 旧 fork `sqlparse/` 在 S7-c 删除，之后本文件只剩「默认选项 + CLI」，成为纯薄壳。
+from sqlfmt_ext import format_sql as _format_sql
+from sqlfmt_ext import format_statements as _format_statements
 
 enc = "utf-8"
 
@@ -26,18 +29,13 @@ DEFAULT_OPTIONS = {
 
 
 def sqlfmt(sql, **options):
-    options = {**DEFAULT_OPTIONS, **options}
-    return sp.format(
-        sql,
-        **options,
-    )
+    """格式化**单条** SQL（与旧实现同义：不 strip、不拆分）。"""
+    return _format_sql(sql, {**DEFAULT_OPTIONS, **options})
 
 
 def sqlfilefmt(sql, **options):
-    rst = []
-    for s in sp.split(sql):
-        rst.append(sqlfmt(s, **options).strip())
-    return "\n\n".join(rst)
+    """按 ``;`` 拆分逐条格式化后以空行拼接（与旧实现同义）。"""
+    return _format_statements(sql, {**DEFAULT_OPTIONS, **options})
 
 
 if __name__ == "__main__":

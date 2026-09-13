@@ -721,11 +721,29 @@ fork 明确会正常建列表）被一起跳掉、内层列表被摊平。fork �
 > 决策人：AI（用户 2026-09-12 授权「你最佳实践处理」）。执行顺序**不可调换**，
 > 每步一个独立提交，失败就 `git revert` 单个提交即可回退。
 
-**S7-a 门禁转正**：新增/改造以**新实现**为准的收敛与幂等门禁（把 `tests/test_sqlfmt_convergence.py`
-的 `KNOWN_DIVERGENT` 那 6 条按新实现在此重测一遍）。**旧套件先不删**，它还是 oracle。
+**S7-a 门禁转正** ✅ **完成**（提交 `14973fc`）：新增 `tests_migration/test_convergence.py`
+（跑在新实现上），实测**幂等 62 项全绿**、收敛 31 个里 5 个不一致（按实测登记，
+`dml/sqltest1_s06` 已**不在**列 —— S5a 兜底带来的净收益）；压平口径抽到
+`tests/fixtures/whitespace.py`（不导入 `sqlfmt`）。
 
 **S7-b 入口切换**：`sqlfmt.py` 的 `sqlfilefmt()` 改为调用 `sqlfmt_ext.format_statements`，
 `DEFAULT_OPTIONS` 保持同名同义；`sqlparse` 从 vendored 目录变为 pip 依赖（`>=0.6,<0.7`）。
+
+> **S7-b 附加动作（实测必需）**：新增**仓库根 `conftest.py`**，把「让已安装官方包胜出」的
+> `sys.path` 调整提到根级 —— 否则 `tests/` 会话会用仓库根的旧 fork 去喂 `sqlfmt_ext`
+> （root 在 `sys.path` 里胜出）→ 静默错乱。
+>
+> **S7-b 实测的 6 个失败（窗口期已知，分类如下，S7-c/d 各自处置）**：
+>
+> | 失败项 | 性质 | 处置 |
+> |---|---|---|
+> | `test_sqlfmt_output_regression[case/sqltest4_s03]` | 基线未重定（= 有意偏离） | **S7-d** 重定 fixture |
+> | `test_sqlfmt_convergence[dml/sqltest1_s06]` | **陈旧 xfail**：新实现已收敛 → XPASS(strict) | S7-c 迁移 `tests/` 时删掉该项（好消息） |
+> | `test_layout_variants[case-operation]` | 同一处偏离的**内联期望**（`case` / `when` 分两行） | **S7-d** 一并重定 |
+> | `test_layout_variants[ddl-column-layout]`、`[ddl-column-comment-newline-fold]`、`[ddl-column-multiword-keyword-newline-fold]` | **真缺口**：`create table ( … )` 的**收尾 `)` 位置受输入换行影响**（折平输入后 `)` 被贴到最后一个字段后，期望独占一行）→ C4 违背 | S7-c 起修补偿（入口 `_create_field_lines` / 括号收尾）或先登记 xfail |
+>
+> 即：**「实现切换」与「基线翻转」不可能在同一提交里都绿**（`tests/` 的输出回归钉着旧基线），
+> 这是卡片允许的短暂窗口，S7-b 的提交信息里写明了。
 
 **S7-c 删 fork（独立提交，用户指定）**：`git rm -r sqlparse/`；处置依赖它的 `tests/`
 （迁移到新实现或按需删除）；删掉 `tests_migration/conftest.py` 里的 `sys.path` 共存 hack。
