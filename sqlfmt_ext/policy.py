@@ -38,7 +38,7 @@ by_words = r"(GROUP|ORDER)\s+BY\b"
 
 # 命中即在关键字前换行；匹配到多词关键字时只取首个单词参与对齐宽度。
 # 这里只放**通用**词：方言专属词（Doris 的 `DISTRIBUTED BY` / `PROPERTIES` 等）在
-# ``dialects.py`` 里声明，由 ``LayoutPass`` 运行时合并进来（见 `PLAN §9.9`）。
+# ``dialects.py`` 里声明，由 ``LayoutPass`` 运行时合并进来（见 `.claude/plan/stages.md` §9.9）。
 split_words = (
     "FROM",
     _join_words,
@@ -98,7 +98,7 @@ PRECEDENCE_ANCHORS = (r"(?<=\.)[A-ZÀ-Ü]\w*",)
 
 # 方言关键字与类型名（Doris 的 ``BUCKETS`` / ``PROPERTIES`` / ``INT64`` / ``DATEV2`` …）
 # **不在这里** —— 它们已收进 `dialects.py` 的方言声明（``Dialect.extra_keywords``）。
-# 本模块只保留**通用**词表与分词口径，见 `PLAN §9.10`。
+# 本模块只保留**通用**词表与分词口径，见 `.claude/plan/stages.md` §9.10。
 
 # 官方多词关键字区块的定位锚点（依次尝试，取第一个命中的）
 ANCHOR_PATTERNS = (

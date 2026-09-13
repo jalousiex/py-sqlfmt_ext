@@ -156,7 +156,7 @@ def _split_batches(sql, separator, lexer):
     """按「独占一个 token 的批分隔符」切批。
 
     判据取自**分词结果**而不是「该行是否只写了 ``GO``」：这样压平空白的输入与 canonical
-    走同一条路径，收敛门禁不会因为换行被压掉而失效（``PLAN §9.11``）。代价是不解析
+    走同一条路径，收敛门禁不会因为换行被压掉而失效（``.claude/plan/stages.md`` §9.11）。代价是不解析
     字符串/注释内容 —— 与 sqlcmd 的按行口径同级，登记为已知边界。
 
     返回 ``(batches, trailing, seen)``：``batches`` 为批文本（空批已丢弃），``trailing``

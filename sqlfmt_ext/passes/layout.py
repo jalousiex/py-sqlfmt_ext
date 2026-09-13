@@ -51,7 +51,7 @@ class LayoutPass(AlignMixin):
         self._curr_stmt = None
         # 换行锚点词 = 通用词 + 方言追加词。**必须挂在实例上**：`policy.split_words` 是
         # 模块级元组，写成类属性就成了导入期快照，方言层后续追加的词永远看不到
-        # （见 `PLAN §9.9`）。
+        # （见 `.claude/plan/stages.md` §9.9）。
         self.split_words = tuple(policy.split_words) + dialects.split_words_for(opts.get("dialect", "doris"))
         # 「官方判成 Keyword 的类型名」：编译成**带词边界**的正则（供 `_create_field_lines`
         # 的类型列判定；避免 `TIME` 之类在别的关键字内部被 `re.search` 命中）
@@ -647,7 +647,7 @@ class LayoutPass(AlignMixin):
     def _is_stmt_leading_comment(self, tlist):
         """该注释是否位于某条语句**真实开始之前**（语句前导注释）。
 
-        口径（2026-09-13，PLAN §9.7）：只有这种注释才「保持列 0」，判据必须是
+        口径（2026-09-13，`.claude/plan/stages.md` §9.7）：只有这种注释才「保持列 0」，判据必须是
         **结构性**的 —— 它之前不存在任何有效 token（空白与注释都不算）。
 
         实现：只看**本层** ``tlist`` 之前的兄弟；本层没有有效 token 就向上一层追问，
@@ -758,7 +758,7 @@ class LayoutPass(AlignMixin):
             return
 
         # 语句前导注释（位于本条语句第一个有效 token 之前）**结构性**保持列 0：
-        # 判据是结构位置，不再看输入里它写没写在行首（口径 2026-09-13，见 PLAN §9.7）。
+        # 判据是结构位置，不再看输入里它写没写在行首（口径 2026-09-13，见 `.claude/plan/stages.md` §9.7）。
         if self._is_stmt_leading_comment(tlist):
             return
 
@@ -1167,7 +1167,7 @@ class LayoutPass(AlignMixin):
     def _normalize_trailing_semicolon(self, stmt):
         """把语句末尾的 `;` 顶到列 0 —— `;` 是**分段终止符**，不参与子句层级缩进。
 
-        口径（2026-09-13，见 `PLAN §9.8`）：`;` 是 `format_statements` 用来切分语句的
+        口径（2026-09-13，见 `.claude/plan/stages.md` §9.8）：`;` 是 `format_statements` 用来切分语句的
         边界，它不是任何子句的内容；但官方分组会把它收进**子句组内部**（如 ``Where``）。
         所以前面各步**一律不为它做特殊处理**，只在每轮 layout 的**最后**统一兜底：
         `;` 独占一行时顶列 0。

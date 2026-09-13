@@ -1,6 +1,6 @@
-"""方言层验收：证明「方言」是真开关，而不是装饰性声明（`PLAN §9.9`）。
+"""方言层验收：证明「方言」是真开关，而不是装饰性声明（`.claude/plan/stages.md` §9.9）。
 
-三条断言对应 `PLAN §9.9` 的三个验收点：
+三条断言对应 `.claude/plan/stages.md` §9.9 的三个验收点：
 1. Doris/SelectDB 声明的锚点词会让 `duplicate key` / `distributed by` / `properties` 各自成行；
 2. `dialect=None`（官方基线）**不**触发这些换行 —— 开关真的在起作用；
 3. 未知方言直接报错，不再静默降级到通用路径。

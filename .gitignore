@@ -5,3 +5,8 @@ output/
 _tmp_*
 
 !.vscode/
+
+# .claude 是本地资产，只放行「计划真身」目录，使其随仓库走
+!.claude/
+.claude/*
+!.claude/plan/

@@ -1,0 +1,82 @@
+# 状态 — py-sqlfmt 阶段状态与门槛
+
+> 本文件是**门槛数字的唯一真身**：别处（`AGENTS.md` / `README.md` / `MEMORY.md` / 技能）
+> 一律只写命令 + 指向本文件。阶段**过程**（靶子 / 根因 / 证据 / 残留）在 `stages.md`。
+> 计划大纲与硬约束见 `PLAN.md`；章号沿用原 `PLAN.md`（本文件 = §3）。
+
+## §3.1 门槛（唯一真身）
+
+```powershell
+.venv\Scripts\python.exe -m pytest -q
+```
+
+| 项 | 值 |
+|---|---|
+| 当前门槛 | **`269 passed`（0 failed / 0 xfailed）** |
+| 收敛门禁 `KNOWN_DIVERGENT` | **已清空**（S10 收口），别新增无原因的 xfail |
+| 唯一测试套件 | `tests/`（迁移期的 `tests_migration/` 随旧 fork 在 S7 删除） |
+
+只需看收敛门禁时：`.venv\Scripts\python.exe -m pytest -q -k convergence`。
+
+## §3.2 阶段状态表（时间序；门槛列按当时口径）
+
+> S7 之前是对拍口径（`passed / xfailed`，跑在新实现上）；S7 起是唯一套件的 `pytest` 数字。
+> 每行的**过程与根因**见 `stages.md` 对应小节（§9.x 章号一致）。
+
+| 阶段 | 内容 | 门槛 | 状态 |
+|---|---|---|---|
+| **S0** | 计划落地 + 骨架 + 对拍进度条 | 1 / 30 | ✅ |
+| **S1** | 布局引擎移植到官方 0.6.0 之上（方言 lexer、分词补丁、`LayoutPass`、摘官方换行 filter） | 4 / 27 | ✅ |
+| **S2** | 上游语义差异补偿 U5–U7（`Case.get_cases` 注释占位、`Where.M_CLOSE`、`get_real_name`） | 4 / 27 | ✅ U5 落地；U6/U7 实测无影响 |
+| **S3** | L1 注释强制换行改成结构性规则（+ U11 空白归一化、U10 `OVER (` 优先级、U9 分组补偿） | 16 / 15 | ✅ |
+| **S4** | L2 括号字段列表展开（真因 = 分组口径 U12） | 21 / 10 | ✅ |
+| **S5a** | L4 多 `lateral view` 各自分行（分词兜底） | 22 / 9 | ✅ |
+| **S5b** | U14 + `_create_guard` 边界 + 注释串按层级缩进 | 24 / 7 | ✅ |
+| **S5c** | `case` 与首个 `when` 同行（口径重定 + 有意偏离登记，S7-d 已归零） | 23 / 8 | ✅ |
+| **S6** | 列对齐收尾（真因多为分组/分词：U15 尾逗号、U16 缺 `DATETIME`、U13 CREATE 早退、S6b 相邻续接列表） | 31 / 0 | ✅ |
+| **S7** | 收敛 + 幂等 + 入口切换 + 删 fork + 重定基线（五提交 `14973fc`→`4471cd6`） | 172 passed / 4 xfailed | ✅ |
+| **S9** | 注释断行的结构性口径：跨注释组强制换行 + `ON COMMIT` 白名单结构化 | 175 passed / 1 xfailed | ✅ |
+| **S10** | 「注释保持列 0」判据结构化 → 收窄到**语句前导注释** | 176 passed / 0 xfailed | ✅ |
+| **S10-b** | 收尾注释改「按所在层级对齐」；`;` 一律顶列 0（只在收尾兜底） | 176 passed | ✅ |
+| **S8-a** | 方言层收成**单一真身**（`dialects` 登记表）+ 未知方言报错 + 建 `dialect` topic | 185 passed | ✅ |
+| **S8-b** | 方言词表归位（分词层词表也进 `dialects`）+ 补 20 个 Doris 类型名 | 192 passed | ✅ |
+| **S8-c** | SQL Server：`GO` 批分隔符、`TOP`、`WITH(NOLOCK)`、`[ ]` 标识符 | 215 passed | ✅ |
+| **S8-d** | MySQL：11 个类型名、表选项换行锚点、`ON DUPLICATE KEY UPDATE` 合并、表达式内锚点 guard | 234 passed | ✅ |
+| **S11** | DDL 字段列序：约束列查找不得越过 `DEFAULT` | 239 passed | ✅ |
+| **S12** | LIMIT 子句：`m, n` 不按列表展开；`SET` 锚点补词边界（不再子串命中 `OFFSET`） | 244 passed | ✅ |
+| **S13** | ALTER 多子句换行（本层 ≥2 个动作词时各自成行；单动作保持同行） | 249 passed | ✅ |
+| **S14** | 官方判成 `Keyword` 的类型名按方言声明进 DDL 类型列（不改官方词表） | 259 passed | ✅ |
+| **S15** | 泛型尖括号：`map<string, int>` 的实参逗号不再是 DDL 字段分隔符 | 264 passed | ✅ |
+| **S16** | `ON` 锚点补后缀词边界（`ONLY` / `ONLINE` 不再被当成子句头） | 269 passed | ✅ |
+
+**方言路线（S8-a → S8-d）已走完**：Doris / SelectDB（最优先）与 MySQL 已适配；
+SQL Server 已完成并保留、**不回退也不再往前推**（用户口径）；Oracle 未开工。
+
+## §3.3 门禁清单
+
+| 门禁 | 文件 | 判据 |
+|---|---|---|
+| 用例完整性 | `tests/test_sqlfmt_case_integrity.py` | fixture 与 `TOPIC_META` / `FILE_OPTIONS` 一致 |
+| 输出回归 | `tests/test_sqlfmt_output_regression.py` | `format(input) == expected`（fixture 即期望） |
+| 幂等性 | `tests/test_sqlfmt_idempotency.py` | `format(format(x)) == format(x)`，input→input 也幂等 |
+| 收敛性 | `tests/test_sqlfmt_convergence.py` | 压平输入空白后输出仍等于 canonical |
+| 方言开关 | `tests/test_sqlfmt_dialect.py` | 方言真的改变行为，且未知方言报错 |
+| 选项行为 | `tests/test_comma_options.py` | `comma_first` / `align_list` 下的输出（fixture 即期望） |
+| 布局变体 | `tests/test_layout_variants.py` | 关键布局规则的**内联期望** |
+
+## §3.5 已知边界（登记在案，**都不是缺口**；要动先开新阶段卡）
+
+1. **S11**：写在 `DEFAULT` **之后**的列级约束词（`id int default 0 primary key`）不再进约束列
+   —— 判据是「约束列查找止于 `DEFAULT`」；常见形态（`not null` 在 `default` 前、表级 `primary key (id)`）不受影响。
+2. **S12 / S16**：`SET`、`ON` 已补词边界；其余纯词锚点（`AND` / `COMMENT` / `OR` / `FROM` …）仍靠
+   `re.search` 匹配 —— **实测官方词表里没有含这些子串的关键字**，故无实证缺口，登记待观察。
+3. **S13**：ALTER 的 `CONVERT`（MySQL 专有，`alter table t convert to character set utf8`）未纳入动作词。
+4. **S15**：`_process_parenthesis` 的 **WHERE 分支**没有做尖括号深度感知（DDL 分支已做）；
+   WHERE 内出现泛型实参逗号极罕见，故未改。
+5. **S8-c**：批分隔符按**独立 token** 判，**不解析字符串/注释内容**（sqlcmd 同款口径）：
+   字符串里独占一行的 `go` 会被切。
+6. **S14**：未动分词层 → `json` / `double` 在**非 DDL 上下文**（表达式、列名）仍是 `Keyword`（有意为之）。
+7. **S8-d**：Doris 的 `DUPLICATE` 锚点会在 MySQL 的 `on duplicate key update` 里误触发
+   （跨方言组合；单独用 `dialect=mysql` 无此问题）。
+8. **S8-a**：`LATERAL VIEW` 仍留**通用**词表（generic 下因分词层不合并而天然不生效），未按方言拆分
+   —— 暂按「本项目通用增强」处理。

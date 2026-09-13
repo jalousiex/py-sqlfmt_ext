@@ -354,7 +354,7 @@ def _group_level(tlist):
     def valid_prev(token):
         # 试过在这里外加 `or isinstance(token, sql.IdentifierList)`（想让同层已有列表
         # 被「扩进去」），对 `case/sqltest4_s01` **无效果且无回归** —— 说明官方 `_group`
-        # 的扩展触发点不在这个回调上，见 PLAN §9.3「S6b」第十二轮补记。
+        # 的扩展触发点不在这个回调上，见 `.claude/plan/history.md` §9.3「S6b」第十二轮补记。
         return _is_comment(token) or _real_item(token)
 
     def valid_next(token):
@@ -503,7 +503,7 @@ def _unabsorb_trailing_comments(tlist):
         start -= 1
         # 前导空白目前只吃一个：改成整段（while）能修好 `window/sqltest6_s03`
         # （项 `b` 测成 `'b'` 而不是 `'b '`，max_as_offset 回到 9），但会踩
-        # `cte/sqltest2_s02`——见 PLAN §9.3「S6b」里待定的形状判据。
+        # `cte/sqltest2_s02`——见 `.claude/plan/history.md` §9.3「S6b」里待定的形状判据。
         while start > 0 and tlist.tokens[start - 1].is_whitespace:
             start -= 1
     # 全是注释的组保持原样，否则等于把整组搬走

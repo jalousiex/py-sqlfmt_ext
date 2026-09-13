@@ -6,7 +6,7 @@
   追加关键字；不改写官方已有条目。
 - ``dialect=None`` 时**不追加任何东西**，与官方基线可比。
 - **本模块是方言的唯一真身**：分词层（``lexer``）与布局层（``passes/layout``）都到这里取
-  声明，不再各自硬编码白名单（2026-09-13 起，见 `PLAN §9.9`）。
+  声明，不再各自硬编码白名单（2026-09-13 起，见 `.claude/plan/stages.md` §9.9）。
 """
 
 from dataclasses import dataclass
@@ -93,7 +93,7 @@ _DORIS_SPLIT_WORDS = (
     r"DISTRIBUTED\s+BY\b",
 )
 
-# 官方判成 ``Keyword``（不是 ``Name.Builtin``）的类型名 —— 实测得出，见 `PLAN §9.16`：
+# 官方判成 ``Keyword``（不是 ``Name.Builtin``）的类型名 —— 实测得出，见 `.claude/plan/stages.md` §9.16：
 #   * ``JSON``：Doris 的 ``json`` 列类型（MySQL 同）；
 #   * ``DOUBLE`` / ``TIME`` / ``YEAR``：MySQL 的类型名；
 #   * ``MAP`` **不在其列**：官方判成 ``Name.Builtin``（旧记录有误，2026-09-13 实测更正），
@@ -121,7 +121,7 @@ _DORIS = Dialect(
 # 带括号的写法（`varchar(64)` / `decimal(10,2)`）不受影响：官方「函数名」正则先把它截成
 # `Name`，但紧跟的括号会被 `group_functions` 收成一个 `Function` 组，天然与字段名分开。
 # ⚠️ `DOUBLE` / `ENUM` / `SET` / `JSON` / `TIME` / `YEAR` 官方已判成 `Keyword`（不是
-# `Name.Builtin`）→ 本项目**不改写官方已有条目**，未覆盖（登记在 `PLAN §9.12`）。
+# `Name.Builtin`）→ 本项目**不改写官方已有条目**，未覆盖（登记在 `.claude/plan/stages.md` §9.12）。
 _MYSQL_TYPE_NAMES = (
     "BOOL",
     "DATETIME",
