@@ -23,7 +23,9 @@ KNOWN_DIVERGENT = {
     "comma/sqltest7_s02": "块注释之间的换行被压掉（comma_first=True）",
     "cte/sqltest2_s01": "where 后行首注释 / 分号布局依赖输入换行",
     "ddl/sqltest0_s04": "ON COMMIT 刻意分行，属白名单行为，非缺陷",
-    "dml/sqltest1_s06": "多个 lateral view 输入压平后被挤进 from 同一行",
+    # `dml/sqltest1_s06` 已删：入口切到新实现后它**不再依赖输入换行**
+    # （S5a 的 `policy.MULTIWORD_REGEX` 兜底让多个 lateral view 各自分行）——
+    # 这项留着会因 XPASS(strict) 反而变红。
     "nested/sqltest3_s01": "块注释后的换行 / 行首注释对齐依赖输入换行",
 }
 

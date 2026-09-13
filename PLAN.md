@@ -740,7 +740,7 @@ fork 明确会正常建列表）被一起跳掉、内层列表被摊平。fork �
 > | `test_sqlfmt_output_regression[case/sqltest4_s03]` | 基线未重定（= 有意偏离） | **S7-d** 重定 fixture |
 > | `test_sqlfmt_convergence[dml/sqltest1_s06]` | **陈旧 xfail**：新实现已收敛 → XPASS(strict) | S7-c 迁移 `tests/` 时删掉该项（好消息） |
 > | `test_layout_variants[case-operation]` | 同一处偏离的**内联期望**（`case` / `when` 分两行） | **S7-d** 一并重定 |
-> | `test_layout_variants[ddl-column-layout]`、`[ddl-column-comment-newline-fold]`、`[ddl-column-multiword-keyword-newline-fold]` | **真缺口**：`create table ( … )` 的**收尾 `)` 位置受输入换行影响**（折平输入后 `)` 被贴到最后一个字段后，期望独占一行）→ C4 违背 | S7-c 起修补偿（入口 `_create_field_lines` / 括号收尾）或先登记 xfail |
+> | `test_layout_variants` 的 3 个 `ddl-column-*` | ✅ **已修（提交 `31d2e72`，见下）** | 不再需要登记 |
 >
 > 即：**「实现切换」与「基线翻转」不可能在同一提交里都绿**（`tests/` 的输出回归钉着旧基线），
 > 这是卡片允许的短暂窗口，S7-b 的提交信息里写明了。
@@ -748,6 +748,16 @@ fork 明确会正常建列表）被一起跳掉、内层列表被摊平。fork �
 **S7-c 删 fork（独立提交，用户指定）**：`git rm -r sqlparse/`；处置依赖它的 `tests/`
 （迁移到新实现或按需删除）；删掉 `tests_migration/conftest.py` 里的 `sys.path` 共存 hack。
 **提交信息里必须写清「这是不可逆动作、回退方式」**。
+
+> ✅ **完成（提交 `31d2e72` 之后那一个）**。实测：
+> `import sqlparse` → `.venv\...\site-packages\sqlparse`（dist 0.6.0）✓；
+> `tests/` **2 failed, 169 passed, 5 xfailed**（失败只剩 `case/s03` 输出回归与
+> `layout_variants[case-operation]` 这条同一偏离的内联期望 → 都是 S7-d）；
+> `tests_migration/` 119 passed, 5 xfailed 不变；
+> **两套件同会话** `pytest tests tests_migration` → 288 passed, 10 xfailed ✓（删 fork 前不可能）。
+> 同时删掉 `tests_migration/conftest.py`（sys.path hack + 混跑守卫）与
+> `tests/test_sqlfmt_convergence.py` 里的陈旧 xfail `dml/sqltest1_s06`，
+> `pyproject.toml` 的 pytest 注释也去掉了「迁移期两个 sqlparse」的说法。
 
 **S7-d 有意偏离处置（本次决定：正式重定基线，清单归零）**
 - **做法**：删 fork 之后，用**另一个独立提交**把 `tests/fixtures/cases/case/sqltest4_s03.sql`

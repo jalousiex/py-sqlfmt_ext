@@ -7,5 +7,7 @@ requires-python = ">=3.9"
 dependencies = ["sqlparse>=0.6,<0.7"]
 
 [tool.pytest.ini_options]
-# 默认只跑主测试套件；迁移期的对拍测试用 `pytest tests_migration/` 显式运行
+# 默认只跑主套件（fixture 基线回归 + 收敛 + 幂等）；新实现的迁移期门禁在
+# `tests_migration/`，用 `pytest tests_migration/` 显式运行。
+# 删掉 vendored fork 后两套件已可同会话混跑（只剩一个 sqlparse）。
 testpaths = ["tests"]
