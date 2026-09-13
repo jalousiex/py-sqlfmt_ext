@@ -29,8 +29,7 @@ from tests.sqlfmt_test_helpers import format_with_entry_defaults
         (
             "select a, case\nwhen b = 'NUMBER'\nthen b || '(' ||\nnvl(c, '38') || ')'\nend as type_name from t",
             """select a               ,
-       case
-            when b = 'NUMBER' then b || '(' || nvl(c, '38') || ')'
+       case when b = 'NUMBER' then b || '(' || nvl(c, '38') || ')'
        end as type_name
   from t""",
         ),

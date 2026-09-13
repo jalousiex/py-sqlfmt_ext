@@ -26,10 +26,7 @@ from tests.fixtures.whitespace import flatten_whitespace
 #   * `ddl/sqltest0_s04` 的「ON COMMIT 刻意分行」是**口径本身**（白名单行为），
 #     旧套件同样登记，非缺陷。
 KNOWN_DIVERGENT = {
-    "case/sqltest4_s03": (
-        "基线未重定：canonical 仍是旧口径（`case` 与首个 `when` 分两行），"
-        "本实现按结构性口径同行 —— 见 PLAN §9.4 S7-d，重定后该项应删除"
-    ),
+    # `case/sqltest4_s03` 已删：S7-d 把它正式重定成本实现的口径（`case` 与首个 `when` 同行）
     "comma/sqltest7_s02": "块注释之间的换行被压掉（comma_first=True）",
     "cte/sqltest2_s01": "where 后行首注释 / 分号布局依赖输入换行",
     "nested/sqltest3_s01": "块注释后的换行 / 行首注释对齐依赖输入换行",

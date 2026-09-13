@@ -19,7 +19,8 @@ from tests.sqlfmt_test_helpers import (
 
 # 已知「输出依赖输入空白」的用例 → 原因（修好一个删一个）
 KNOWN_DIVERGENT = {
-    "case/sqltest4_s03": "CASE 首个 when 是否独占一行依赖输入换行（_process_case 的 has_nl 判断）",
+    # `case/sqltest4_s03` 已删：S7-d 重定基线为「`case` 与首个 `when` 同行」后，
+    # 该用例的 canonical 本身即稳定形态，压平输入空白不再改变输出。
     "comma/sqltest7_s02": "块注释之间的换行被压掉（comma_first=True）",
     "cte/sqltest2_s01": "where 后行首注释 / 分号布局依赖输入换行",
     "ddl/sqltest0_s04": "ON COMMIT 刻意分行，属白名单行为，非缺陷",
