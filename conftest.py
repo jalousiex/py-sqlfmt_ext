@@ -1,12 +1,10 @@
-"""仓库根 conftest：让**已安装的官方** ``sqlparse`` 优先于仓库内的旧 fork。
+"""仓库根 conftest：**守卫**「必须用 pip 装的官方 sqlparse」。
 
-背景：仓库根的 ``sqlparse/`` 是旧 fork，会遮蔽 site-packages 里的官方包。
-新实现（``sqlfmt_ext``）写在官方 0.6.0 之上，入口 `sqlfmt.py` 已切到它，
-因此任何一次 pytest 都必须拿到官方包 —— 这里把仓库根挪到 ``sys.path`` 末尾，
-使 site-packages 先被检索到（与迁移期 `tests_migration/conftest.py` 里的
-sys.path 调整同义，S7-b 起提到根级，两套件共用）。
-
-S7-c 删除 vendored fork 之后本文件即可删除；留着也是幂等的无操作。
+历史：仓库内曾 vendored 一份旧 fork（``sqlparse/``），它会遮蔽 site-packages 里的官方包；
+迁移期靠把仓库根挪到 ``sys.path`` 末尾来让官方包胜出（S7-b 起提到根级）。
+S7-c 已把那份 fork 删除，于是这段 sys.path 调整变成幂等的无操作 —— 但**校验保留**下来
+当守卫：万一将来又有人把 sqlparse 拷进仓库，pytest 会立刻在这里报错，
+而不是让整条测试链悄悄跑在另一个实现上。
 """
 
 import os

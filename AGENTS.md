@@ -1,18 +1,17 @@
 # AGENTS.md — py-sqlfmt AI 指令
 
-基于 `sqlparse` 二次定制的 SQL 格式化工具。详细说明见 [README.md](README.md)。
+基于官方 `sqlparse` 的小侵入**外挂层**（不改官方源码），详细说明见 [README.md](README.md)。
 
-> **正在进行重构**：目标形态是「官方 sqlparse 之上的小侵入外挂」。
-> 计划、步骤拆分与验收标准见 [PLAN.md](PLAN.md)。
-> 迁移期新实现位于 `sqlfmt_ext/`，对拍进度条跑 `pytest tests_migration/ -q`。
+> **重构已完成（S1–S7）**：唯一实现是 `sqlfmt_ext/`，跑在官方 `sqlparse 0.6.0` 之上；
+> 曾 vendored 的旧 fork 已删除，`sqlparse` 现在是 pip 依赖（`>=0.6,<0.7`，见 `pyproject.toml`）。
+> 差异清单（U1–U16）、每处补偿的落点与时序约束、迁移过程记录见 [PLAN.md](PLAN.md)。
 >
-> ⚠️ 迁移期有**两个** `sqlparse`：仓库内旧 fork（`tests/` 用）与 `.venv` 里的
-> 官方包（`tests_migration/` 用）。**必须分开跑**，同一次 pytest 会话里混跑会被
-> 直接拦截报错——同进程只能加载一个。
+> 验收门槛：`pytest tests/ -q` → **`172 passed, 4 xfailed`**（0 failed）。
+> 那 4 个 xfail 是收敛门禁里**已登记**的「输出仍依赖输入空白」用例，每项都写清了原因。
 
 ## 架构
 
-**迁移期（当前形态）**：`sqlfmt_ext/` 是唯一实现，跑在 `.venv` 的官方 `sqlparse 0.6.0` 之上。
+**唯一实现**：`sqlfmt_ext/`，跑在 `.venv` 的官方 `sqlparse 0.6.0` 之上。
 
 ```
 sqlfmt.py → format_statements()
@@ -23,8 +22,8 @@ sqlfmt.py → format_statements()
   → LayoutPass              # 唯一换行/缩进决策处（passes/layout.py + passes/align.py）
 ```
 
-**旧形态（仅作行为 oracle，S7 删除）**：`sqlparse/` 里的 fork，
-`sqlfmt.py → sqlparse.format()`，核心是把 `AlignedIndentFilter` 改成
+**历史形态（S7 收口时已删除）**：仓库内曾 vendored 一份旧 fork 作行为 oracle，
+它的入口是 `sqlfmt.py → sqlparse.format()`，核心是把 `AlignedIndentFilter` 改成
 「深度优先遍历 + 关键字前换行缩进」。
 
 ## 硬约束（改代码前必读，详见 PLAN.md §1）
@@ -39,7 +38,7 @@ sqlfmt.py → format_statements()
 （S6 段的 7 个「列对齐」用例里，5 个的真因是分组/分词：U15 尾逗号吞子句关键字、U16 缺 `DATETIME`、
 U13 CREATE 早退、S6b 项内尾随空白。）
 
-**元规则二：定性先写最小重现**（`_tmp_cmp.py --fork/--new "<片段>"`），别拿整条 fixture 下结论。
+**元规则二：定性先写最小重现**（现写个临时脚本，见「诊断工具」；单行片段输入即可），别拿整条 fixture 下结论。
 
 **元规则三（元规则二的边界）：孤立片段与真实 fixture 行为不一致时，以 `@fixture` 的两侧探针为准。**
 「抽出来跑是好的」**不等于**实现正确——S6b 就栽在这里：同一个 select 列表抽出来跑完全正确，
@@ -65,34 +64,34 @@ S6b 的「注释前导空白整段搬出组」必须与「注释串延续改判�
 | `sqlfmt_ext/grouping.py` | 官方分组前后的口径补偿（U 系列差异都记在 `MEMORY.md`） |
 | `sqlfmt_ext/policy.py` | 换行锚点词、Doris 分词补丁、优先级补丁 |
 | `sqlfmt_ext/lexer.py` · `sqlfmt_ext/stack.py` | `DialectLexer`；复用官方 `build_filter_stack` 后换装 |
-| `sqlparse/` | 旧 fork，迁移期只作行为 oracle，**不要改**（S7 删除） |
+| `sqlparse`（pip 依赖） | 官方 0.6.0，**不改其源码**；口径差异一律用 `sqlfmt_ext/` 的补偿实现 |
 
 ## 默认格式化参数
 
-`keyword_case=lower`, `indent_width=4`, `reindent_aligned=True`, `wrap_after=30`, `use_space_around_operators=True`, `comma_align=True`
+`keyword_case=lower`、`indent_width=4`、`reindent_aligned=True`、`wrap_after=30`、`use_space_around_operators=True`、`align_list=True`（扩展项）、`dialect="doris"`（扩展项）
 
-定义在 `sqlfmt.py` 的 `DEFAULT_OPTIONS` 字典中。
+定义在 `sqlfmt_ext/options.py`（`DEFAULT_OPTIONS` + `EXTENSION_DEFAULTS`）；`sqlfmt.py` 保留同名 `DEFAULT_OPTIONS` 供 CLI 使用。
 
 ## 测试约定
 
 - 用例目录是 **`tests/`**（不是 `pytests/`）：`tests/fixtures/cases/<topic>/*.sql` — fixture 文件**即期望输出**，测试验证幂等性
 - 新增用例：在对应 `cases/<topic>/` 下添加 `.sql` 文件，在 `tests/fixtures/sql_cases.py` 的 `TOPIC_META` 中注册 topic
 - 需要非默认选项的用例：在 `FILE_OPTIONS` 中按文件名映射选项
-- 主套件（旧 fork）：`.venv\Scripts\python.exe -m pytest tests/ -q` — **必须保持 `170 passed, 6 xfailed`**
-- 对拍进度条（新外挂）：`.venv\Scripts\python.exe -m pytest tests_migration/ -q` — `xfail(strict=True)`，修好一个就从 `KNOWN_DIFF` 删掉
-- 两个套件**不要在同一次 pytest 会话里跑**（`tests_migration/conftest.py` 的 `sys.path` 调整是进程级副作用）
+- 唯一入口：`.venv\Scripts\python.exe -m pytest tests/ -q` — **必须保持 `172 passed, 4 xfailed`**（0 failed）
+- `xfail(strict=True)` 的 4 处是**收敛门禁**里已登记的用例（输出仍依赖输入空白），每项都写清了原因；修好一项就删一项，不要新增「无原因」的 xfail
+- 仓库根 `conftest.py` 会校验 `sqlparse.__file__` 来自 site-packages —— 防止再出现「仓库内 vendored 包遮蔽官方包」的老问题
 - 筛选用例：`SQLFMT_CASE_TAGS=comma .venv\Scripts\python.exe -m pytest tests/ -v`
 
-## 诊断工具（迁移期临时脚本，未跟踪；S7 统一删除）
+## 诊断工具
 
-| 脚本 | 用途 |
-|---|---|
-| `_tmp_check.py [-v] [用例名]` | 逐用例首 2 处差异 + 「是否只是空白宽度」，看全局格局 |
-| `_tmp_cmp.py --fork/--new "<片段>"` | 两侧**输出**对照 |
-| `_tmp_nt.py "<片段>"` / `_tmp_forkidx.py` | 两侧 **token 树** dump（都支持 `@相对路径`） |
-| `_tmp_align_probe.py --fork/--new @fixture` | **列对齐中间量**：`[layouts]` 的 `max_as_offset`/`max_alias_len`／每项 `as_offset`／`[apply]` 前后文本 |
-| `_tmp_ddlprobe.py --fork/--new @fixture` | **DDL 字段列**中间量：`field_lines`／每列 `max_offset`／每个 token 的 offset |
-| `_tmp_lv.py "<片段>"` | 语句层每个 token 对 `split_words` 的命中（查「关键字没触发换行」） |
+迁移期的 `_tmp_*.py` 探针脚本已在 S7 收口时**全部删除**（旧 fork 也没了，`--fork/--new` 双侧对照已无意义）。
+需要时**现写一个临时脚本**放仓库根（`_tmp_*.py` 已在 `.gitignore`，用完删掉），推荐套路：
+
+- 入口：`from sqlfmt_ext import format_statements`；要看中间态就 `stack.build_stack()` 自建 FilterStack 分步跑
+- 看**树**：`from sqlparse import engine` + `sqlfmt_ext.grouping.group(stmt)` 后递归打印
+  `type(token).__name__` 与 `token.value`（含 `@相对路径` 直接喂 fixture）
+- 看**中间量**：分组之后 / layout 之后各 dump 一次。列对齐问题看**列表项集合**与
+  `max_as_offset` / `max_alias_len`；DDL 看 `field_lines` 与每列 `max_offset`
 
 **坑位（每条都是真踩过的）**
 - `FilterStack.run(sql)` 返回**生成器**，不消费等于没跑。
