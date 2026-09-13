@@ -111,12 +111,44 @@ class AlignMixin:
                 token == tlist[-1],
             )
 
+    @staticmethod
+    def _angle_delta(token):
+        """泛型尖括号 token 对嵌套深度的贡献（``<`` +1 / ``>`` -1 / ``>>`` -2）。
+
+        只认**全字符同号**的 token：``<=`` / ``>=`` / ``<>`` 这些比较运算符混了其它字符
+        → 返回 0，不会被误当尖括号。
+        """
+        if token.ttype not in T.Operator:
+            return 0
+        value = token.value
+        if value and set(value) == {"<"}:
+            return len(value)
+        if value and set(value) == {">"}:
+            return -len(value)
+        return 0
+
+    def _next_field_comma(self, tlist, idx):
+        """下一个**不在泛型尖括号内**的逗号（`idx` 之后查找）。
+
+        ``map<string, int>`` / ``struct<a:int, b:string>`` 里的逗号是**类型实参**的分隔符，
+        不是 DDL 字段分隔符 —— 按它切段会把一个字段拆成两行（列也随之错位）。
+        返回 ``(index, token)``；找不到返回 ``(None, None)``（与 ``token_next_by`` 一致）。
+        """
+        depth = 0
+        while True:
+            idx, token = tlist.token_next(idx, skip_ws=False)
+            if token is None:
+                return None, None
+            depth += self._angle_delta(token)
+            if depth == 0 and token.match(T.Punctuation, ","):
+                return idx, token
+
     def _create_field_lines(self, tlist):
         """收集 DDL/INSERT 字段定义的名称、类型、约束、默认值、注释和结尾 token。"""
         field_lines = []
         last_field = True
         prev_idx = 0
-        end_idx, end_token = tlist.token_next_by(m=(T.Punctuation, ","), idx=prev_idx)
+        end_idx, end_token = self._next_field_comma(tlist, prev_idx)
         while end_idx:
             # 字段内先定位 DEFAULT：**紧跟其后的 `NULL` 是默认值本身**（MySQL 导出的
             # `dept_id int(11) default null`），不能再被约束列取走 —— 取走会让该字段的
@@ -156,7 +188,7 @@ class AlignMixin:
             field_lines.append(field_line)
 
             prev_idx = end_idx
-            end_idx, end_token = tlist.token_next_by(m=(T.Punctuation, ","), idx=prev_idx)
+            end_idx, end_token = self._next_field_comma(tlist, prev_idx)
             if not end_idx and last_field:
                 end_idx, end_token = len(tlist.tokens) - 1, tlist.tokens[-1]
                 last_field = False

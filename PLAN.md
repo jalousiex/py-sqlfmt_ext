@@ -123,7 +123,7 @@ S7 删除 fork 后该 conftest 一并删除。
 
 | 套件 | 命令 | 现状 |
 |---|---|---|
-| 全套件（唯一） | `.venv\Scripts\python.exe -m pytest -q` | `259 passed`（0 failed / 0 xfailed） |
+| 全套件（唯一） | `.venv\Scripts\python.exe -m pytest -q` | `264 passed`（0 failed / 0 xfailed） |
 
 > 迁移期的「主套件（旧 fork）+ 对拍进度条（`tests_migration/`）」两套件已在 S7 随 fork
 > 一起删除（见 §9.4），旧对拍用例并入了 `tests/`。四个门禁（输出回归 / 幂等 / 收敛 / 对拍）
@@ -322,6 +322,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | **S12** | LIMIT 子句：`LIMIT m, n` 不按列表展开；`SET` 锚点补词边界（原先子串命中 `OFFSET`，把 `offset` 拆成独立一行） | 通用 DML 用例 | **244 passed** | ✅ 完成（见 §9.14） |
 | **S13** | ALTER 多子句换行：本层 ≥2 个动作词（`ADD`/`DROP`/`MODIFY`…）时各自成行；单动作语句保持同行 | 通用 DDL 用例 | **249 passed** | ✅ 完成（见 §9.15） |
 | **S14** | 官方判成 `Keyword` 的类型名（`json`/`double`/`time`/`year`）按方言声明进 DDL 类型列（不改官方词表） | 方言 DDL 用例 | **259 passed** | ✅ 完成（见 §9.16） |
+| **S15** | 泛型尖括号：`map<string, int>` / `struct<…>` 的**实参逗号**不再是 DDL 字段分隔符（深度感知的字段逗号查找） | 方言 DDL 用例 | **264 passed** | ✅ 完成（见 §9.17） |
 
 > **方言优先级（用户口径，2026-09-13）**：**Doris / SelectDB 最优先 → 其次 MySQL →
 > Oracle / SQL Server 暂缓**。S8-c（SQL Server）已完成并保留，不回退、也不再往前推
@@ -428,10 +429,10 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 
 ## 9. 断点续做（下一次会话从这里开始）
 
-> 落盘时间：2026-09-13（S14 收工刷新），**S1–S7、S9、S10、S10-b、S8-a~d、S11、S12、S13、S14 全部完成**
+> 落盘时间：2026-09-13（S15 收工刷新），**S1–S7、S9、S10、S10-b、S8-a~d、S11–S15 全部完成**
 > （S7-a~e 五个提交见 §9.4 末尾，S9 见 §9.6，S10 见 §9.7，S10-b 见 §9.8，S8-a 见 §9.9，
 > S8-b 见 §9.10，S8-c 见 §9.11，S8-d 见 §9.12，S11 见 §9.13，S12 见 §9.14，S13 见 §9.15，
-> S14 见 §9.16），**门槛 `pytest -q` → `259 passed`（0 failed / 0 xfailed）**，
+> S14 见 §9.16，S15 见 §9.17），**门槛 `pytest -q` → `264 passed`（0 failed / 0 xfailed）**，
 > 收敛门禁 `KNOWN_DIVERGENT` **已清空**，无遗留偏离清单。
 >
 > **本节是「阶段断点卡」**：每阶段的开工点与残留都记在这里。配合
@@ -441,20 +442,24 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 > Oracle / SQL Server 暂缓不做**。**S8-a~d 至此全部收**：Doris/SelectDB 与 MySQL 已适配；
 > SQL Server（S8-c）已完成并保留（不回退、也不再往前推）；Oracle 未开工。
 >
-> **下一步开工点**：方言路线已走完，S11 / S12 / S13 / S14 已收，剩下的都是**共享缺口**，
-> 各自需先开新阶段卡再动手：
-> 1. **泛型尖括号里的逗号**：`map<string, int>` 的 `<…>` 实参逗号被当 DDL **字段分隔符** →
->    字段被切错、逐段错位（Doris 的 `MAP` 官方判成 `Name.Builtin`，类型列本身没问题）。
->    需要一个「尖括号内的逗号不作字段分隔」的结构判据（与 `_create_field_lines` 的按 `,` 切段配套）；
-> 2. S11 的已知边界：`DEFAULT` **之后**写的列级约束词（`id int default 0 primary key`）
->    不再进约束列（判据是「约束列查找止于 `DEFAULT`」，见 §9.13）；
-> 3. S12 的已知边界：`SET` 之外还有同类「纯字母锚点」（`AND` 撞 `expand`、`COMMENT` 撞
->    `comments`、`\bON` 撞 `only`）—— 现无 fixture 触发，登记待观察（见 §9.14）。
+> **下一步开工点**：方言路线已走完，S11–S15 已收。**当前无「必须做」的缺口**，
+> 剩下的都是**登记在案的已知边界**（都不影响现有 fixture，各自需先开新阶段卡再动手）：
+> 1. S11：`DEFAULT` **之后**写的列级约束词（`id int default 0 primary key`）不再进约束列
+>    （判据是「约束列查找止于 `DEFAULT`」，见 §9.13）；
+> 2. S12：`SET` 之外还有同类「纯字母锚点」（`AND` 撞 `expand`、`COMMENT` 撞 `comments`、
+>    `\bON` 撞 `only`）—— 现无 fixture 触发（见 §9.14）；
+> 3. S13：ALTER 的 `CONVERT`（MySQL 专有，`alter table t convert to character set utf8`）
+>    未纳入动作词（见 §9.15）；
+> 4. S15：`_process_parenthesis` 的 **WHERE 分支**没有做尖括号深度感知（DDL 分支已做）；
+>    WHERE 内出现泛型实参逗号的写法极罕见，故未改（见 §9.17）。
+>
+> **若要开新阶段，建议方向**（任选其一，先勘测再写卡）：把 `tests/fixtures/cases/` 之外的
+> 真实 DDL/DML 语料跑一遍做「差异巡检」，从中挑出下一个真正影响可读性的缺口。
 
 ### 9.1 复现当前状态
 
 ```powershell
-.venv\Scripts\python.exe -m pytest -q                   # 门槛：259 passed（0 failed / 0 xfailed）
+.venv\Scripts\python.exe -m pytest -q                   # 门槛：264 passed（0 failed / 0 xfailed）
 .venv\Scripts\python.exe -m pytest -q -k convergence    # 只看收敛门禁（此刻全绿，无 xfail）
 ```
 
@@ -1715,3 +1720,62 @@ doris:       b    json       ,        generic:  b json            ,   ← 字段
   —— 这是有意为之（改分词会波及全局，且与「不改写官方条目」冲突）。
 
 **回退方式**：`git revert <本阶段提交>`（3 处代码 + 新增 fixture 与 `.input.sql`；纯文本、无不可逆动作）。
+
+---
+
+### 9.17 S15 执行卡 + 已收（2026-09-13）：泛型尖括号里的实参逗号
+
+**靶子**：Doris 的 `MAP` / `ARRAY` / `STRUCT` 类型（`MAP` 官方判成 `Name.Builtin`，类型列本身没问题）：
+
+```text
+       a    map<string ,     ← 实参逗号被当成 DDL 字段分隔符 → 一个字段被拆成两行
+       int>            ,
+```
+
+**根因**：DDL 字段列表的切段完全按 `,` —— `align._create_field_lines` 用
+`token_next_by(m=(T.Punctuation, ","))`，`layout._process_parenthesis` 的字段列表分支也用同一手法换行；
+而 `map<string, int>` / `struct<a:int, b:string>` 的逗号在 `<…>` **内部**。
+
+**勘测到的结构细节（决定实现）**：
+
+- `<` / `>` 是 `T.Operator.Comparison` 的**单个 token**；
+- **`>>` 是合并后的单个 token**（`array<map<string, int>>`）→ 深度必须按**字符数**增减，不能按 1；
+- `<=` / `>=` / `<>` 混了其它字符 → 不参与深度（否则比较表达式会被误判）。
+
+**改动**（`align.py` 两处新增 + `layout.py` 一处替换；只改「找哪个逗号」，不动树、不删 token）：
+
+1. `AlignMixin._angle_delta(token)`：`<`/`>` 的**全字符同号** token 才计入深度（`>>` 记 −2）；
+2. `AlignMixin._next_field_comma(tlist, idx)`：向后找**深度为 0** 的逗号，返回 `(idx, token)`，
+   找不到返回 `(None, None)`（与 `token_next_by` 的返回形态一致，调用处零改动）；
+3. `_create_field_lines` 的两处逗号查找 → `_next_field_comma`；
+4. `LayoutPass._process_parenthesis` 的 **DDL/INSERT 字段列表分支** → 同上（并顺手把原来的
+   「找不到逗号后仍调 `token_next(None)`」改成显式 `break`）。
+
+**证据**（`dialect="doris"`）：
+
+```text
+create table t (
+       a map<string, int>,
+       b varchar(10)
+);
+
+create table t (
+       a array<int>             ,
+       b array<map<string, int>>,
+       c varchar(10)
+);
+
+create table t (
+       a struct<name:varchar(10), age:int>,
+       b int
+);
+```
+
+**验收**：`.venv\Scripts\python.exe -m pytest -q` → **`264 passed`（0 failed / 0 xfailed）**。
+原 259 项一项没动；新增 5 项 = `tests/fixtures/cases/dialect/sqltest3_s01.sql`（实跑输出定稿）+
+`.input.sql` 这一用例进四个门禁 + `case-integrity` 1。
+
+**残留 / 下一步**：`_process_parenthesis` 的 **WHERE 分支**未做深度感知（WHERE 的括号里出现泛型
+实参逗号的写法极罕见）；`tests/test_layout_variants.py` 的既有内联期望未动。见 §9 头部「下一步开工点」。
+
+**回退方式**：`git revert <本阶段提交>`（`align.py` 两处新增 + `layout.py` 一处替换 + 新增 fixture 与 `.input.sql`）。

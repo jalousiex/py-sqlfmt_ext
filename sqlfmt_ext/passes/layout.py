@@ -348,7 +348,11 @@ class LayoutPass(AlignMixin):
                         while next_ and nidx > 0:
                             nidx, _ = self._remove_prev_newline(tlist, nidx)
                             tlist.insert_before(next_, self.nl())
-                            nidx, next_ = tlist.token_next_by(m=(T.Punctuation, ","), idx=nidx + 1)
+                            # 查找下一个逗号，处理列表换行（跳过泛型尖括号内的实参逗号：
+                            # `map<string, int>` 是一个字段，不是两个）
+                            nidx, comma = self._next_field_comma(tlist, nidx + 1)
+                            if comma is None:
+                                break
                             nidx, next_ = tlist.token_next(nidx, skip_cm=True)
                 self._process_default(tlist, stmts=False)
                 # 新增对齐逻辑
