@@ -589,6 +589,44 @@ class LayoutPass(AlignMixin):
         """判断 token 是否为注释 —— 既覆盖 `sql.Comment` 分组，也覆盖裸注释 token。"""
         return isinstance(token, sql.Comment) or token.ttype in T.Comment
 
+    @staticmethod
+    def _closes_its_level(plist, pidx):
+        """``pidx`` 处的注释是否紧接在**语句结束符** ``;`` 之前（本层内只隔着空白）。
+
+        用来替代「输入里它在行首」这一输入依赖判据 —— 两者都刻画「该注释独占
+        本层末尾一行」，而后者压平输入后信息就丢了。`;` 常被收进子句组内部
+        （`where … \\n-- x\\n;` 里 ``;`` 就在 ``Where`` 组中），故按「其后本层
+        只剩空白 + ``;``」判定。
+
+        必须要求 ``;`` **存在**：本层最后一个 token 的注释（`EmpCode -- 员工编码`
+        那种行内注释）同样满足「其后无内容」，但它是跟着前面的 token 走的，
+        不能因此被换行（`comma/sqltest7_s02`、`dml/sqltest1_s02` 会回归）。
+        """
+        rest = [tk for tk in plist.tokens[pidx + 1 :] if not tk.is_whitespace]
+        return bool(rest) and all(tk.value == ";" for tk in rest)
+
+
+    def _is_stmt_leading_comment(self, tlist):
+        """该注释是否位于某条语句**真实开始之前**（语句前导注释）。
+
+        口径（2026-09-13，PLAN §9.7）：只有这种注释才「保持列 0」，判据必须是
+        **结构性**的 —— 它之前不存在任何有效 token（空白与注释都不算）。
+
+        实现：只看**本层** ``tlist`` 之前的兄弟；本层没有有效 token 就向上一层追问，
+        直到顶层。嵌入括号 / 列表里的注释，其祖先层里必然有 ``with`` / ``select``
+        之类的有效 token，因此天然为 False。
+        """
+        plist = tlist.parent
+        if plist is None:
+            return False
+        idx = plist.token_index(tlist)
+        for tk in plist.tokens[: idx or 0]:
+            if tk.is_whitespace or self._is_comment(tk):
+                continue
+            return False
+        return self._is_stmt_leading_comment(plist)
+
+
     def _break_between_comments(self, tlist):
         """Comment 组内相邻注释强制各自成行 —— 两个注释不共享一行。
 
@@ -681,11 +719,13 @@ class LayoutPass(AlignMixin):
         if self.comma_first and isinstance(tlist.parent, sql.IdentifierList):
             return
 
-        # 不处理行首注释，只处理需要换行的单行注释和强制换行
-        # 括号带有缩进，获取偏移时是自动换行的只有一个空白，改为不考虑相对偏移
-        if self._get_offset(tlist, relative=False) == 0 or (
-            not tlist.value.rstrip() == "/*-*/" and not tlist.value.startswith("--")
-        ):
+        # 语句前导注释（位于本条语句第一个有效 token 之前）**结构性**保持列 0：
+        # 判据是结构位置，不再看输入里它写没写在行首（口径 2026-09-13，见 PLAN §9.7）。
+        if self._is_stmt_leading_comment(tlist):
+            return
+
+        # 只处理需要换行的单行注释和强制换行
+        if not tlist.value.rstrip() == "/*-*/" and not tlist.value.startswith("--"):
             return
 
         # 取父对象及在父对象中的位置
@@ -784,9 +824,15 @@ class LayoutPass(AlignMixin):
             with offset(self, offset_):
                 # 判断前边紧挨的token情况
                 _, prev_ = plist.token_prev(pidx, skip_ws=False)
-                if prev_ and prev_.is_newline:
-                    # 行首不处理，且将行首的newline从空白转回换行
-                    prev_.value = self.n
+                if prev_ and prev_.is_whitespace and (
+                    prev_.is_newline or self._closes_its_level(plist, pidx)
+                ):
+                    # 「本层收尾注释」旧判据只有 `prev_.is_newline`（输入里它在行首），
+                    # 于是缩进完全由输入空白决定（C4 违背，`cte/sqltest2_s01` 最后一个
+                    # 收敛缺口）。补一条**结构性**等价：它之后本层再无内容（只余语句
+                    # 结束符 `;`）—— 压平输入时同样成立，两条路径归一。
+                    # 语句前导注释保持列 0 的规则已在 `_process_comment` 开头 return。
+                    prev_.value = self.nl(0).value
                     return
                 # 紧贴前边的增加一个空格，行首不处理
                 if pidx > 0 and not prev_.is_whitespace:
@@ -1004,6 +1050,48 @@ class LayoutPass(AlignMixin):
         # if __debug__: print('='*8+func_name+'\n'+str(self._curr_stmt), flush=True)
         pass
 
+    def _last_content(self, tlist):
+        """返回 ``(父 list, 下标)``，指向 ``tlist`` 里最后一个非空白 token（会下钻子组）。"""
+        for i in range(len(tlist.tokens) - 1, -1, -1):
+            tk = tlist.tokens[i]
+            if tk.is_whitespace:
+                continue
+            if isinstance(tk, sql.TokenList) and tk.tokens:
+                found = self._last_content(tk)
+                if found is not None:
+                    return found
+            return tlist, i
+        return None
+
+    def _normalize_trailing_semicolon(self, stmt):
+        """把语句末尾的 `;` 顶到列 0 —— `;` 是**分段终止符**，不参与子句层级缩进。
+
+        口径（2026-09-13，见 `PLAN §9.8`）：`;` 是 `format_statements` 用来切分语句的
+        边界，它不是任何子句的内容；但官方分组会把它收进**子句组内部**（如 ``Where``）。
+        所以前面各步**一律不为它做特殊处理**，只在每轮 layout 的**最后**统一兜底：
+        `;` 独占一行时顶列 0。
+
+        「独占一行」有两种形态，都要归一：换行在 `;` 前的**空白 token** 里（置为单个
+        换行）；换行由**前一个行注释**自带、空白只剩缩进（把这段缩进抹掉）。
+        同行写法（`select 1 ;`）不动。
+        """
+        found = self._last_content(stmt)
+        if found is None:
+            return
+        plist, idx = found
+        if str(plist.tokens[idx].value) != ";":
+            return
+        _, prev_ = plist.token_prev(idx, skip_ws=False)
+        if prev_ is None or not prev_.is_whitespace:
+            return
+        if self.n in prev_.value:
+            prev_.value = self.n
+            return
+        prev_idx = plist.token_index(prev_)
+        _, before = plist.token_prev(prev_idx, skip_ws=False)
+        if before is not None and self._is_comment(before) and str(before.value).endswith(self.n):
+            prev_.value = ""
+
     def process(self, stmt):
         # 处理入口
         self._curr_stmt = stmt
@@ -1011,4 +1099,6 @@ class LayoutPass(AlignMixin):
         merge_whitespace_runs(stmt)
         self._normalize_newlines(stmt)
         self._process(stmt)
+        # 收尾兜底：语句终止符 `;` 永远顶列 0（不参与子句层级缩进）
+        self._normalize_trailing_semicolon(stmt)
         return stmt

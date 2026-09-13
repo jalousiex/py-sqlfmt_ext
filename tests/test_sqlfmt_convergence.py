@@ -25,10 +25,13 @@ KNOWN_DIVERGENT = {
     # 从组内规则扩到**同层并列的注释组**（`LayoutPass._break_before_sibling_comment`），
     # 判据由 `prev_.is_newline` 换成「前一段注释自己不带行尾换行」。
     # `ddl/sqltest0_s04` 已删：S9 把 `ON COMMIT` 白名单改成结构性（命中者一律按分词切开）。
-    "cte/sqltest2_s01": "where 后行首注释 / 分号布局依赖输入换行（列 0 注释口径本身以输入为准）",
     # `dml/sqltest1_s06` 已删：入口切到新实现后它**不再依赖输入换行**
     # （S5a 的 `policy.MULTIWORD_REGEX` 兜底让多个 lateral view 各自分行）——
     # 这项留着会因 XPASS(strict) 反而变红。
+    # `cte/sqltest2_s01` 已删（S9-g）：唯一剩下的发散项。原判据是 `prev_.is_newline`
+    # ——「输入里该注释是否在行首」，与 C4 天然冲突。改为结构性判据
+    # `LayoutPass._closes_its_level`（其后本层只余空白与语句结束符 `;`），
+    # 压平输入后同样成立，两条路径归一。**当前 `KNOWN_DIVERGENT` 为空**。
 }
 
 

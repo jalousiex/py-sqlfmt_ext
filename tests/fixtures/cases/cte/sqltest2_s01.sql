@@ -23,5 +23,5 @@ select t.EmpName     ,
          from DW.mdm.employee_post_relation_more
        ) t --多岗, 多岗为常态
  where t.EmpRecordNum = 0
--- 顶行首注释
+       -- 顶行首注释
 ;
