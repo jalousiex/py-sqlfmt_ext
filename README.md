@@ -2,7 +2,8 @@
 
 基于官方 `sqlparse` 的 SQL 格式化工具：**不改官方源码**，把团队口径做成一层外挂补偿
 （`sqlfmt_ext/`），固化默认参数，并用回归 / 收敛 / 幂等三类用例钉住输出稳定。
-优先支持 Doris / SelectDB 方言（`dialect="doris"`）。
+优先支持 Doris / SelectDB 方言（`dialect="doris"`）；SQL Server 方言（`dialect="sqlserver"`）已适配
+`GO` 批分隔符、`TOP`、`WITH(NOLOCK)`（`[ ]` 标识符官方本就支持）。
 
 ## 安装
 
@@ -51,7 +52,8 @@ python -m pytest -q
 
 ```text
 sqlfmt.py → sqlfmt_ext.format_statements()
-  → 官方 lexer.tokenize()        # 正则分词（DialectLexer 追加方言词表）
+  → 方言批切分（仅当 batch_separator 非空，如 sqlserver 的 GO）
+  → 官方 lexer.tokenize()        # 正则分词（DialectLexer 追加方言词表 / 优先级规则）
   → 官方 StatementSplitter       # 按 ; 分割语句
   → sqlfmt_ext.grouping.group()  # 官方分组 + 本项目补偿（见下）
   → sqlfmt_ext.passes.layout     # 核心：深度优先遍历，关键字前换行 + 缩进
@@ -74,9 +76,10 @@ sqlfmt.py → sqlfmt_ext.format_statements()
 - `sqlfmt_ext/lexer.py` · `sqlfmt_ext/stack.py` — `DialectLexer`；复用官方 `build_filter_stack` 后**换装 / 摘除** filter
 - `sqlfmt_ext/filters/` — 替换官方的空白 / 操作符 filter
 - `sqlfmt_ext/policy.py` — **通用**关键字与多词关键字口径（`LATERAL VIEW`、`OVER(` 的优先级补丁等）
-- `sqlfmt_ext/dialects.py` — **方言的唯一真身**：`Dialect(name, lexer_patches, extra_keywords,
-  extra_split_words, notes)`。分词层（方言关键字与**类型名**）、布局层（`DISTRIBUTED BY` 等换行锚点）
-  都从这里取声明；未知方言由 `options` 直接报错（不再静默降级）
+- `sqlfmt_ext/dialects.py` — **方言的唯一真身**：`Dialect(name, multiword_patches,
+  precedence_patches, extra_lexer_rules, extra_keywords, extra_split_words, batch_separator, notes)`。
+  分词层（方言关键字与**类型名**、方言专属优先级规则）、布局层（`DISTRIBUTED BY` 等换行锚点）、
+  批切分层（SQL Server 的 `GO`）都从这里取声明；未知方言由 `options` 直接报错（不再静默降级）
 - `sqlfmt_ext/options.py` — 默认参数与校验（扩展项 `align_list` / `dialect`）
 
 `PLAN.md` 记录了「官方 0.6.0 与旧 fork 的语义差异清单（U1–U16）」、每处补偿的落点与
@@ -93,8 +96,7 @@ sqlfmt.py → sqlfmt_ext.format_statements()
   （`xfail(strict=True)` 会在修好时主动报错提示）
 - 仓库根 `conftest.py` 会校验 `sqlparse.__file__` 来自 site-packages —— 防止「仓库内 vendored 包
   遮蔽官方包」的老问题复发
-- 门槛：**`175 passed, 1 xfailed`（0 failed）**；那 1 个 xfail 是收敛门禁里已登记的
-  「输出仍依赖输入空白」用例
+- 门槛：**`215 passed`（0 failed / 0 xfailed）**；收敛门禁 `KNOWN_DIVERGENT` 已清空
 
 ### 默认格式化参数
 

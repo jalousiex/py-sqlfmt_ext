@@ -86,3 +86,41 @@ def test_generic_dialect_keeps_doris_type_names_as_plain_names():
     generic = format_with_options(DORIS_TYPES_DDL, dialect=None)
     assert "id int64" in generic
     assert generic != format_with_options(DORIS_TYPES_DDL, dialect="doris")
+
+
+# --- S8-c：SQL Server 适配（GO / TOP / WITH(NOLOCK)；`[ ]` 官方已支持）-------------
+
+SQLSERVER_TOP = "select top 10 id, name from dbo.t;"
+SQLSERVER_TOP_EXPECTED = "select top 10 id  ,\n              name\n  from dbo.t;"
+
+
+def test_sqlserver_top_does_not_break_field_columns():
+    """`TOP <n>` 必须留在字段列表之外，列基准得按真实字段名算。
+
+    `dialect=None` 时 `top` 落普通 `Name` → 紧跟的数字被 `group_identifier_list` 的
+    extend 收进**第一个列表项** → 基准取到数字上：`id` 被右顶、`name` 退回 DML 列。
+    """
+    assert format_with_options(SQLSERVER_TOP, dialect="sqlserver") == SQLSERVER_TOP_EXPECTED
+    generic = format_with_options(SQLSERVER_TOP, dialect=None)
+    assert generic != SQLSERVER_TOP_EXPECTED
+    assert "top 10   id," in generic
+
+
+SQLSERVER_HINT = "select id from dbo.t with (nolock);"
+SQLSERVER_HINT_EXPECTED = "select id\n  from dbo.t with (nolock);"
+
+
+def test_sqlserver_table_hint_does_not_break_line():
+    """`WITH (NOLOCK)` 表提示不能让 `WITH` 被当成 CTE 而独占一行。"""
+    assert format_with_options(SQLSERVER_HINT, dialect="sqlserver") == SQLSERVER_HINT_EXPECTED
+    # `dialect=None` 认 `T.CTE` → `with (nolock)` 换行成独占一行（开关真起作用）
+    assert format_with_options(SQLSERVER_HINT, dialect=None) != SQLSERVER_HINT_EXPECTED
+
+
+def test_sqlserver_splits_batches_on_go():
+    """`GO` 独占一个 token 时切批；输出恒用声明字面量 `GO`（与输入大小写/空白无关）。"""
+    assert format_with_options("select 1\nGO\nselect 2", dialect="sqlserver") == "select 1\nGO\n\nselect 2"
+    # 小写 `go` 同样切批，输出仍是声明里的 `GO`（满足 C4：不依赖输入空白/大小写）
+    assert format_with_options("select 1; go\nselect 2;", dialect="sqlserver") == "select 1;\nGO\n\nselect 2;"
+    # `dialect=None` 没有批概念 → `go` 被当成普通词胶进上一句
+    assert format_with_options("select 1\nGO\nselect 2", dialect=None) == "select 1 go\n\nselect 2"

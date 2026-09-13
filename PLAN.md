@@ -123,7 +123,7 @@ S7 删除 fork 后该 conftest 一并删除。
 
 | 套件 | 命令 | 现状 |
 |---|---|---|
-| 全套件（唯一） | `.venv\Scripts\python.exe -m pytest -q` | `192 passed`（0 failed / 0 xfailed） |
+| 全套件（唯一） | `.venv\Scripts\python.exe -m pytest -q` | `215 passed`（0 failed / 0 xfailed） |
 
 > 迁移期的「主套件（旧 fork）+ 对拍进度条（`tests_migration/`）」两套件已在 S7 随 fork
 > 一起删除（见 §9.4），旧对拍用例并入了 `tests/`。四个门禁（输出回归 / 幂等 / 收敛 / 对拍）
@@ -316,7 +316,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | **S10-b** | 收尾注释改「按所在层级对齐」；`;` 作为分段终止符**一律顶列 0**（前面不特殊处理） | 口径修订 | **176 passed / 0 xfailed** | ✅ 完成（见 §9.8） |
 | **S8-a** | 方言层收成**单一真身**：`dialects` 登记表 + `lexer`/`LayoutPass`/`grouping` 都从它取；未知方言报错；建 `dialect` topic | 方言用例 | **185 passed** | ✅ 完成（见 §9.9） |
 | **S8-b** | 方言词表归位（分词层词表也进 `dialects`）+ 补齐 20 个 Doris 类型名 | 方言用例 | **192 passed** | ✅ 完成（见 §9.10） |
-| **S8-c** | SQL Server：`GO` 批分隔符、`[ ]` 标识符、`TOP`、`WITH(NOLOCK)` | 方言用例 | — | ⏳ 待做 |
+| **S8-c** | SQL Server：`GO` 批分隔符、`[ ]` 标识符、`TOP`、`WITH(NOLOCK)` | 方言用例 | **215 passed** | ✅ 完成（见 §9.11） |
 
 > 对拍列格式：`passed / xfailed`。
 > **L1 的规则要从「依赖输入换行」改成「结构性判定」**：`/*-*/` 与 `--` 强制断行、
@@ -419,21 +419,26 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 
 ## 9. 断点续做（下一次会话从这里开始）
 
-> 落盘时间：2026-09-13（S8-b 收工刷新），**S1–S7、S9、S10、S10-b、S8-a、S8-b 全部完成**
+> 落盘时间：2026-09-13（S8-c 收工刷新），**S1–S7、S9、S10、S10-b、S8-a、S8-b、S8-c 全部完成**
 > （S7-a~e 五个提交见 §9.4 末尾，S9 见 §9.6，S10 见 §9.7，S10-b 见 §9.8，S8-a 见 §9.9，
-> S8-b 见 §9.10），**门槛 `pytest -q` → `192 passed`（0 failed / 0 xfailed）**，
+> S8-b 见 §9.10，S8-c 见 §9.11），**门槛 `pytest -q` → `215 passed`（0 failed / 0 xfailed）**，
 > 收敛门禁 `KNOWN_DIVERGENT` **已清空**，无遗留偏离清单。
 >
 > **本节是「阶段断点卡」**：每阶段的开工点与残留都记在这里。配合
 > [AGENTS.md](AGENTS.md) 的「**阶段推进协议**」（开工四步 / 收工六步 / 汇报格式）使用。
 >
-> **下一步开工点**：**S8-c（SQL Server 适配）**：`GO` 批分隔符、`[ ]` 标识符、`TOP`、
-> `WITH(NOLOCK)` 等 —— 开工前先按 §9.9 / §9.10 的形态补一张执行卡。
+> **下一步开工点**：**方言路线已到计划终点（S8-a/b/c 全部收）**。剩下的是 §9.10 / §9.9 登记的
+> **两条已知边界**，各自需要先开新阶段卡再动手（不在本轮范围内）：
+> 1. `json` / `map` 在 Doris 里是类型名，官方词表已把它们判成 `Keyword` → 本项目不改写官方条目，
+>    未覆盖（Doris DDL 行内对齐会差一格）；
+> 2. 批分隔符口径不解析字符串/注释内容（字符串里独占一行的 `go` 会被切），与 sqlcmd 按行同级。
+>
+> 若继续推进，建议下一阶段 = **用户实跑反馈驱动**（拿真实 Doris/T-SQL 文件跑一遍，按差异开卡）。
 
 ### 9.1 复现当前状态
 
 ```powershell
-.venv\Scripts\python.exe -m pytest -q                   # 门槛：192 passed（0 failed / 0 xfailed）
+.venv\Scripts\python.exe -m pytest -q                   # 门槛：215 passed（0 failed / 0 xfailed）
 .venv\Scripts\python.exe -m pytest -q -k convergence    # 只看收敛门禁（此刻全绿，无 xfail）
 ```
 
@@ -1245,3 +1250,100 @@ HLL INT16 INT32 INT64 INT128 IPV4 IPV6 JSONB LARGEINT QUANTILE_STATE STRUCT VARI
 - 下一步 **S8-c（SQL Server 适配）**：`GO` 批分隔符、`[ ]` 标识符、`TOP`、`WITH(NOLOCK)`。
 
 **回退方式**：`git revert <本阶段提交>`（5 处文本改动 + 新增 fixture/断言；纯文本、无不可逆动作）。
+
+---
+
+### 9.11 S8-c 执行卡：SQL Server 适配（`GO` / `TOP` / `WITH(NOLOCK)` / `[ ]`）
+
+**背景**：S8-a/S8-b 只把**词表**变成了开关 —— `dialect="sqlserver"` 与 `dialect=None` 至今
+**逐字节相同**（SQL Server 一支零行为差异）。开工前逐条实测四个目标构造：
+
+| # | 构造 | 实测现状（官方 0.6.0 + 本项目） | 处置 |
+|---|---|---|---|
+| 1 | `[id]` / `[dbo].[t]` | 官方就认（落 `Token.Name`），输出已正确 | **不改**，只固化 fixture |
+| 2 | `TOP 10` | `top` 落 `T.Name` → 被 `group_identifier` 包成 `Identifier`，紧跟的**数字**又被 `group_identifier_list` 的 extend 收进**第一个列表项** → 列表成 `[10 id, name]`，字段列基准取到数字上：`select top 10   id,\n           name` | **修**（分组层，官方分组**前**预包） |
+| 3 | `WITH (NOLOCK)` | `with (nolock)` 的 `with` 落 `Keyword.CTE` → `LayoutPass._split_statements` 认 `T.CTE` → **独占一行**；而 `with(nolock)`（`(` 紧贴）先被官方「函数名」正则截成 `Name` → 粘在表名后。**同一语义两种写法两种输出** | **修**（分词层，方言优先级规则） |
+| 4 | `GO` 批分隔 | `GO` 是官方 `T.Keyword`，但切分**只按 `;`** → 无分号时 `select 1\nGO\nselect 2` 被排成 `select 1 go`（胶成一条语句）；且输出随输入空白/大小写漂移（`'go\n\nselect 2;'` vs `'go\nselect 2;'`） | **修**（切分层，按 token 切批） |
+
+**目标（本轮只做这一件）**：让 `sqlserver` 成为**行为真的不同**的方言，并修掉 2/3/4。
+
+1. `dialects.Dialect` 声明拆细：`lexer_patches: bool` → `multiword_patches`（Doris 多词补丁
+   `policy.MULTIWORD_REGEX`）+ `precedence_patches`（通用优先级补丁 `policy.PRECEDENCE_REGEX`）；
+   新增 `extra_lexer_rules`（**只对本方言生效**的优先级规则）与 `batch_separator: str`。
+   理由：SQL Server 要「优先级补丁」（`over (`）但**不要** Doris 的 `PARTITION BY` /
+   `DISTRIBUTED BY` 那套多词合并。
+2. SQL Server 声明 = `precedence_patches=True` + `extra_lexer_rules=((r"WITH\b(?=\s*\()", T.Keyword),)`
+   + `extra_keywords=(("TOP", T.Keyword), ("PERCENT", T.Keyword))` + `batch_separator="GO"`。
+   `WITH(?=\s*\()` 只吃「`WITH` 紧跟 `(`」，CTE（`with cte as (…)`）不受影响。
+3. `grouping.py` 新增**官方分组前**的 `_pre_merge_top_clause`：把 `TOP <n> [PERCENT]`（含括号形
+   `TOP (<n>)`）合并成**单个 `T.Keyword` token**，词值按空格归一（`top    10` 的原始间距不漏进输出）。
+   选 `Keyword` 而非 `Identifier` 组是**对照实验的结论**：`Identifier` 组会被
+   `group_identifier_list` 的 extend 吸进列表（首字段前多 2~6 格、后一个字段被并进同一项、
+   其余退回 DML 列），`Keyword` 不会被吸 —— 合并后列表恢复成 `[id, name]`，对齐基准回到真实字段名。
+   合并后大小写交给官方 `KeywordCaseFilter`（预处理层，早于分组）统一，因此 `TOP 10` 与 `top 10`
+   输出一致、幂等确定。**闸门 = 「`TOP` 在本方言下是不是 `T.Keyword`」**（靠第 2 条的关键字声明）：
+   其余方言与 `dialect=None` 的官方基线行为不变。
+4. `stack.format_statements` 增加**批切分**：判据取自**分词结果**（「独占一个 token 的
+   `GO`」），不看行首形态 —— 这样压平空白后的输入与 canonical 走同一条路径，**收敛门禁不破**。
+   逐批仍走原 `;` 切分，批之间用 `\n<sep>\n\n` 连接，末尾有分隔符则补一行；空批（连续
+   `GO` / 只有空白）直接丢弃。
+5. 验收通道：新增 `tests/fixtures/cases/sqlserver/`（4 个 fixture）+ `TOPIC_META["sqlserver"]`
+   （topic 级 `options={"dialect": "sqlserver"}`）+ `test_sqlfmt_dialect.py` 补断言。
+
+**验收（门槛数字）**：
+- 原 **192 项一项不变**（默认方言仍 doris；四个构造都不在既有 fixture 里，`[ ]`/`top`/`with (`/`go`
+  已 grep 确认零命中）；
+- `dialect="sqlserver"`：①`select top 10 id, name …` 字段列对齐正确；②`from dbo.t t with (nolock)`
+  不换行；③`select 1\nGO\nselect 2` 切成两批且 `GO` 独占一行；
+- `dialect=None`：三处**都不生效**（`top 10` 仍错位、`with (nolock)` 仍换行、`GO` 不切批）→ 开关真起作用；
+- `.venv\Scripts\python.exe -m pytest -q` → 192 + 新增（4 个 fixture 进四个门禁 + 断言）。
+
+**风险 / 雷区**：
+- `TOP` 合并的判据是「`TOP` 后紧跟数字或 `(<数字>)`」：`select top from t` / `select top, x`
+  不触发（已实测）；`TOP (@n)` 变量形式**不猜**、保持原样。
+- 批分隔符按**独立 token** 判，**不解析字符串/注释内容**（sqlcmd 同款口径）：字符串里独占一行的
+  `go` 会被切 —— 目前无此形状用例，登记为已知边界。
+- `batch_separator` 输出**恒为声明字面量**（`GO`，与输入大小写无关），不受 `keyword_case` 影响 →
+  满足 C4/收敛；若用户要小写 `go`，改 `dialects.py` 里那一个字符串即可。
+- `dialects.Dialect` 字段改名会波及 `lexer.py`（唯一消费方，已 grep）；`mysql`/`generic` 保持两个
+  开关全 False（与主基线 `dialect=None` 一致）。
+
+**回退方式**：`git revert <本阶段提交>`（`dialects.py` / `lexer.py` / `stack.py` / `grouping.py`
+四文件文本改动 + 新增 topic/fixture/断言；纯文本、无不可逆动作）。
+
+#### 9.11.1 S8-c 已收（2026-09-13）
+
+**改动**（5 个文件 + 1 个新 topic）：
+
+| 文件 | 改动 |
+|---|---|
+| `dialects.py` | `Dialect.lexer_patches` 拆成 `multiword_patches`（Doris 多词合并）+ `precedence_patches`（通用 `OVER (` 补丁）；新增 `extra_lexer_rules`（方言专属优先级规则）与 `batch_separator`；新增 `batch_separator_for()`；声明 `sqlserver`（`WITH(?=\()` 规则 + `TOP`/`PERCENT` 关键字 + `batch_separator="GO"`） |
+| `lexer.py` | 按 `multiword_patches` / `precedence_patches` / `extra_lexer_rules` 三项分别注入（此前是一个 `lexer_patches` 开关） |
+| `grouping.py` | 新增 `_pre_merge_top_clause` + `_top_clause_span`，在**官方分组前**跑；docstring 补第 6 条缺口 |
+| `stack.py` | `format_statements` 增加批切分：`_split_batches`（按分词结果判「独立 `GO` token」）/ `_join_batches`；原主体抽成 `_format_batch` |
+| `tests/` | 新增 `cases/sqlserver/sqltest0_s01.sql`（`[ ]` + 表提示）、`sqltest1_s01.sql`（`top 10`）、`sqltest1_s02.sql`（`top (10) percent`）、`sqltest2_s01.sql`（`GO` 两批）+ `TOPIC_META["sqlserver"]` + `test_sqlfmt_dialect.py` 3 条断言 |
+
+**效果（证据）**：`dialect="sqlserver"` 与 `dialect=None` 至此**输出不同**（此前逐字节相同）：
+
+```text
+top 10    sqlserver: select top 10 id  ,           generic: select top 10   id,
+                               name                              name
+with hint sqlserver:   from dbo.t with (nolock);   generic:   from dbo.t
+                                                             with (nolock);
+GO batch  sqlserver: select 1 \n GO \n\n select 2  generic: select 1 go \n\n select 2
+```
+
+**验收**：`.venv\Scripts\python.exe -m pytest -q` → **`215 passed`（0 failed / 0 xfailed）**。
+
+- 原 192 项一项没动（默认方言仍 `doris`；四个构造在既有 fixture 里 grep 零命中）；
+- 新增 23 项：4 个 fixture 各进四个门禁（输出回归 1 + 幂等 2 + 收敛 1 + case-integrity 1 = 5）
+  = 20，加 `test_sqlfmt_dialect.py` 3 条 = 23；
+- 开关证据：`dialect=None` 下三处**都不生效**（`top 10` 仍错位、`with (nolock)` 仍换行、`GO` 不切批）。
+
+**残留 / 下一步**：
+- 批分隔符不解析字符串/注释内容（字符串里独占一行的 `go` 会被切）—— 与 sqlcmd 按行口径同级，
+  登记为已知边界（`PLAN §9.11` 风险条目）。
+- `json` / `map` 官方判成 `Keyword`，本项目不改写官方条目 → 未覆盖（见 §9.10.1 残留）。
+- 方言路线（S8-a/b/c）**至此走完**；`mysql` 仍是纯登记（与通用路径一致）。
+
+**回退方式**：`git revert <本阶段提交>`（5 处文本改动 + 新增 topic/fixture/断言；纯文本、无不可逆动作）。

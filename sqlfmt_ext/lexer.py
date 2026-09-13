@@ -26,14 +26,17 @@ class DialectLexer(Lexer):
     def default_initialization(self):
         super().default_initialization()
         dialect = dialects.get_dialect(self.dialect)
-        if not dialect.lexer_patches:
-            return
         # 词表：方言关键字 + 类型名（追加查询，不覆盖官方已有键）
         self.add_keywords(dict(dialect.extra_keywords))
-        # 多词关键字：前插到官方多词关键字区块，避免被通用单词规则抢先
-        self._insert_rules(policy.compiled(policy.MULTIWORD_REGEX), policy.ANCHOR_PATTERNS, len(self._SQL_REGEX) - 8)
-        # 优先级补丁：必须早于官方「函数名」正则，否则 over( 会被判成 Name
-        self._insert_rules(policy.compiled(policy.PRECEDENCE_REGEX), policy.PRECEDENCE_ANCHORS, 0)
+        if dialect.multiword_patches:
+            # 多词关键字：前插到官方多词关键字区块，避免被通用单词规则抢先
+            self._insert_rules(policy.compiled(policy.MULTIWORD_REGEX), policy.ANCHOR_PATTERNS, len(self._SQL_REGEX) - 8)
+        if dialect.precedence_patches:
+            # 优先级补丁：必须早于官方「函数名」正则，否则 over( 会被判成 Name
+            self._insert_rules(policy.compiled(policy.PRECEDENCE_REGEX), policy.PRECEDENCE_ANCHORS, 0)
+        if dialect.extra_lexer_rules:
+            # 方言自己的优先级规则：同样要压过官方「函数名」正则
+            self._insert_rules(policy.compiled(dialect.extra_lexer_rules), policy.PRECEDENCE_ANCHORS, 0)
 
     def _insert_rules(self, entries, anchors, fallback):
         rules = self._SQL_REGEX

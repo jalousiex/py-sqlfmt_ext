@@ -45,7 +45,12 @@
    （S4 的 5 个用例）。旧 fork 在 ``group_functions`` 里有「跳过表名+列名括号」
    的专门分支，本项目不改官方源码，改为在官方分组**之前**把对象名链预包成
    ``Identifier``：``group_functions`` 只看本层的裸 ``T.Name``、不递归，链一包住
-   它就看不见了。见 ``_pre_wrap_object_name``。
+  它就看不见了。见 ``_pre_wrap_object_name``。
+
+6. **``TOP <n>`` 被吸进字段列表的第一项**（官方分组之前补，**只有声明了 TOP 关键字的
+   方言才走**）。``TOP`` 不是官方关键字（落 ``T.Name``），``select top 10 id, name`` 里紧跟
+   ``top`` 的**数字**会被 ``group_identifier_list`` 的 extend 收进第一个列表项，
+   字段列表变成 ``[10 id, name]``，列基准取到数字上。见 ``_pre_merge_top_clause``。
 """
 
 from sqlparse import sql
@@ -260,6 +265,77 @@ def _pre_wrap_object_name(tlist):
         _, after = tlist.token_next(end)
         if after is not None and after.match(T.Punctuation, "("):
             tlist.group_tokens(sql.Identifier, start, end)
+
+
+_TOP_CLAUSE_TRAILERS = ("PERCENT",)
+
+
+def _pre_merge_top_clause(tlist):
+    """把 ``TOP <n> [PERCENT]`` 合并成**一个** ``T.Keyword`` token（官方分组之前）。
+
+    ``TOP`` 在官方词表里不是关键字（落 ``T.Name``），于是 ``select top 10 id, name``
+    里 ``top`` 被 ``group_identifier`` 包成 ``Identifier``，**紧跟的数字**又被
+    ``group_identifier_list`` 的 extend 收进**第一个列表项** → 列表成 ``[10 id, name]``，
+    字段列基准取到数字上：``select top 10   id`` 换行后 ``name`` 落在 DML 列而不是 ``id``
+    列（违反本项目「同列对齐」口径）。
+
+    合并成一个 ``Keyword``（与官方 ``NOT NULL`` / ``ON COMMIT`` 这类多词关键字同形）后，
+    它**留在字段列表之外**，列表恢复成 ``[id, name]``，对齐按真实字段名算 ——
+    输出与「同形状但不带 TOP」逐列对齐位置一致，只是整体右移了 TOP 那一段的宽度。
+    选 ``Keyword`` 而不是 ``Identifier`` 是有实测依据的：``Identifier`` 会被
+    ``group_identifier_list`` 的 extend 吸进列表（连带把后一个字段并进同一项），
+    于是首字段前多出 2~6 格、后续字段退回 DML 列；``Keyword`` 不会被吸。
+
+    **闸门 = 「``TOP`` 在本方言下是不是 ``T.Keyword``」**：只有声明过 TOP 的方言
+    （``dialects._SQLSERVER_EXTRA_KEYWORDS``）才走这条，其余方言与 ``dialect=None``
+    的官方基线行为不变。词值用 ``" ".join(...)`` 归一空白 —— 否则 ``top    10`` 的
+    原始间距会漏进输出；大小写不用在这里管，``TOP`` 既是关键字，官方
+    ``KeywordCaseFilter``（预处理层，早于分组）已经统一过口径了。
+    括号形 ``top (10)`` 一并收（SQL Server 文档推荐写法）：不并入时括号自成一组，
+    后一个字段的列基准会与首字段错开（见 ``cases/sqlserver/sqltest1_s02.sql`` 的实测对照）。
+    """
+    for token in list(tlist.tokens):
+        if token.is_group or token.ttype not in T.Keyword:
+            continue
+        if str(token.value).upper() != "TOP":
+            continue
+        idx = tlist.token_index(token)
+        if idx is None:
+            continue
+        span = _top_clause_span(tlist, idx)
+        if span is None:
+            continue
+        end, number_idx, wrapped = span
+        number = str(tlist.tokens[number_idx])
+        value = f"{token.value} ({number})" if wrapped else f"{token.value} {number}"
+        tidx, trailer = tlist.token_next(end)
+        if trailer is not None and str(trailer.value).upper() in _TOP_CLAUSE_TRAILERS:
+            end = tidx
+            value = f"{value} {trailer.value}"
+        tlist.tokens[idx] = sql.Token(T.Keyword, value)
+        del tlist.tokens[idx + 1:end + 1]
+
+
+def _top_clause_span(tlist, idx):
+    """``TOP`` 之后属于该子句的范围：``(最后 token 下标, 数字下标, 是否括号形)``。
+
+    不是 ``TOP <n>`` / ``TOP (<n>)`` 形状则 None。两种官方写法都收（``TOP (10)`` 是
+    SQL Server 文档推荐形）；括号内只认**一个数字**，``TOP (@n)`` 这类变量形式保持原样、不猜。
+    """
+    nidx, next_ = tlist.token_next(idx)
+    if next_ is None:
+        return None
+    if next_.ttype in T.Number:
+        return nidx, nidx, False
+    if not next_.match(T.Punctuation, "("):
+        return None
+    inner_idx, inner = tlist.token_next(nidx)
+    if inner is None or inner.ttype not in T.Number:
+        return None
+    close_idx, close = tlist.token_next(inner_idx)
+    if close is None or not close.match(T.Punctuation, ")"):
+        return None
+    return close_idx, inner_idx, True
 
 
 def _group_level(tlist):
@@ -866,6 +942,7 @@ def group(stmt):
     _group_interval_literals(stmt)  # 必须在官方分组之前
     _wrap_keyword_alias_lhs(stmt)  # 必须在官方分组之前
     _pre_wrap_object_name(stmt)  # 必须在官方分组之前
+    _pre_merge_top_clause(stmt)  # 必须在官方分组之前（TOP n 不参与字段列表）
     stmt = official.group(stmt)
     _walk(stmt)
     # U13：CREATE+TABLE（无 AS）时官方不包 Function，这里补包（必须在官方分组之后）

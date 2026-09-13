@@ -10,8 +10,9 @@
 """
 
 from sqlparse import engine, filters, formatter
+from sqlparse import tokens as T
 
-from sqlfmt_ext import grouping, policy  # noqa: F401  确保分词补丁 ttype 已派生
+from sqlfmt_ext import dialects, grouping, policy  # noqa: F401  确保分词补丁 ttype 已派生
 from sqlfmt_ext.filters.operators import SpacesAroundOperatorsFilter
 from sqlfmt_ext.filters.whitespace import StripWhitespaceFilter
 from sqlfmt_ext.lexer import build_lexer
@@ -122,8 +123,25 @@ def format_sql(sql, options=None):
 
 
 def format_statements(sql, options=None):
-    """按 ``;`` 拆分逐条格式化后以空行拼接（行为对齐旧 ``sqlfilefmt``）。"""
+    """按 ``;`` 拆分逐条格式化后以空行拼接（行为对齐旧 ``sqlfilefmt``）。
+
+    方言声明了 ``batch_separator``（SQL Server 的 ``GO``）时，先按批分隔符切批，
+    逐批走上面那条原路，批之间插一行分隔符。
+    """
     opts = validate_options(options)
+    separator = dialects.batch_separator_for(opts.get("dialect"))
+    if not separator:
+        return _format_batch(sql, opts)
+
+    lexer = build_lexer(opts.get("dialect"))
+    batches, trailing, seen = _split_batches(sql, separator, lexer)
+    if not seen:
+        return _format_batch(sql, opts)
+    return _join_batches(batches, separator, trailing, opts)
+
+
+def _format_batch(sql, opts):
+    """按 ``;`` 拆分逐条格式化后以空行拼接（``format_statements`` 的主体）。"""
     lexer = build_lexer(opts.get("dialect"))
 
     splitter = FilterStack(lexer)
@@ -132,3 +150,49 @@ def format_statements(sql, options=None):
     stack = _assemble(opts)
     stack.postprocess.append(filters.SerializerUnicode())
     return "\n\n".join("".join(stack.run(stmt)).strip() for stmt in statements)
+
+
+def _split_batches(sql, separator, lexer):
+    """按「独占一个 token 的批分隔符」切批。
+
+    判据取自**分词结果**而不是「该行是否只写了 ``GO``」：这样压平空白的输入与 canonical
+    走同一条路径，收敛门禁不会因为换行被压掉而失效（``PLAN §9.11``）。代价是不解析
+    字符串/注释内容 —— 与 sqlcmd 的按行口径同级，登记为已知边界。
+
+    返回 ``(batches, trailing, seen)``：``batches`` 为批文本（空批已丢弃），``trailing``
+    表示输入以分隔符收尾，``seen`` 表示出现过批分隔符（为假时调用方走原路径）。
+    """
+    wanted = separator.upper()
+    batches = []
+    current = []
+    seen = 0
+    trailing = False
+    for ttype, value in lexer.get_tokens(sql):
+        if ttype in T.Keyword and value.upper() == wanted:
+            seen += 1
+            batches.append("".join(current))
+            current = []
+            trailing = True
+            continue
+        current.append(value)
+        if value.strip():
+            trailing = False
+    tail = "".join(current)
+    if tail.strip():
+        batches.append(tail)
+    return [b for b in batches if b.strip()], trailing, seen
+
+
+def _join_batches(batches, separator, trailing, opts):
+    """批之间插一行批分隔符；批内语句仍用空行（原口径）。
+
+    形态：``<批>`` → ``\\n<sep>`` → ``\\n\\n<下一批>``；最后一个批若以分隔符收尾则补一行。
+    """
+    out = []
+    for index, text in enumerate(batches):
+        if index:
+            out.append("\n\n")
+        out.append(_format_batch(text, opts))
+        if index < len(batches) - 1 or trailing:
+            out.append("\n" + separator)
+    return "".join(out)

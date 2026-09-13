@@ -35,6 +35,7 @@ TOPIC_META = {
     "generic": {"label": "泛型类型", "tags": ("generic", "short", "split")},
     # 方言用例：topic 级 options 让整组跑在指定方言上（`_build_case` 支持 topic 级 options）
     "dialect": {"label": "方言", "tags": ("dialect", "short", "split"), "options": {"dialect": "doris"}},
+    "sqlserver": {"label": "方言（SQL Server）", "tags": ("sqlserver", "short", "split"), "options": {"dialect": "sqlserver"}},
 }
 
 
