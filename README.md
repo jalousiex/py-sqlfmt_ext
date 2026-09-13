@@ -71,6 +71,7 @@ sqlfmt.py → sqlfmt_ext.format_statements()
 - `sqlfmt_ext/grouping.py` — 官方 `grouping` 之后的补偿（`_wrap_create_table_calls` /
   `_attach_over_to_functions` / `_extend_adjacent_lists` / `_trim_clause_tail` 等，
   每处 docstring 都写明「为什么需要」与「为什么放这个位置」）
+- `sqlfmt_ext/lexer.py` · `sqlfmt_ext/stack.py` — `DialectLexer`；复用官方 `build_filter_stack` 后**换装 / 摘除** filter
 - `sqlfmt_ext/filters/` — 替换官方的空白 / 操作符 filter
 - `sqlfmt_ext/policy.py` — 关键字与多词关键字口径（含方言补充，如 `DATETIME`）
 - `sqlfmt_ext/options.py` — 默认参数与校验（扩展项 `align_list` / `dialect`）
@@ -82,11 +83,19 @@ sqlfmt.py → sqlfmt_ext.format_statements()
 
 - `tests/fixtures/cases/` 下的 `.sql` 文件**即期望输出**（同时作为输入，除非同目录存在
   `<name>.input.sql`）；新增用例只需加 `.sql` 文件，无需改测试代码
-- 新 topic 在 `tests/fixtures/sql_cases.py` 的 `TOPIC_META` 注册
+- 新 topic 在 `tests/fixtures/sql_cases.py` 的 `TOPIC_META` 注册；需要非默认选项的用例在
+  同文件的 `FILE_OPTIONS` 里按文件名映射
+- 按标签筛选用例：`SQLFMT_CASE_TAGS=comma python -m pytest -v`
 - 收敛 / 幂等门禁里的 `KNOWN_DIVERGENT` 每项都必须写清原因；修好一项就删一项
   （`xfail(strict=True)` 会在修好时主动报错提示）
+- 仓库根 `conftest.py` 会校验 `sqlparse.__file__` 来自 site-packages —— 防止「仓库内 vendored 包
+  遮蔽官方包」的老问题复发
+- 门槛：**`172 passed, 4 xfailed`（0 failed）**；那 4 个 xfail 是收敛门禁里已登记的
+  「输出仍依赖输入空白」用例
 
 ### 默认格式化参数
 
 `keyword_case=lower`、`indent_width=4`、`reindent_aligned=True`、`wrap_after=30`、
 `use_space_around_operators=True`、`align_list=True`（扩展项）、`dialect="doris"`（扩展项）
+
+低频参数**不做 CLI 参数**，优先改 `sqlfmt_ext/options.py` 的模块级默认值。
