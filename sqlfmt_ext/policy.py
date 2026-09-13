@@ -60,7 +60,10 @@ split_words = (
     "COMMENT",
     "ROLLUP",
     r"\bON\s+COMMIT\b",
-    r"\bON",
+    # 后缀词边界必须写：`\bON` 只约束了前缀，会在 `ONLY` / `ONLINE` 内部命中
+    # （两者官方都判成 `T.Keyword`）→ 它们被当成子句头独占了整行。
+    # `ON COMMIT` / `ON MANUAL` / `ON SCHEDULE` 是多词 token，`\bON\b` 照样命中。
+    r"\bON\b",
     r"LATERAL\s+VIEW",
 )
 

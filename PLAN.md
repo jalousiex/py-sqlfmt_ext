@@ -123,7 +123,7 @@ S7 删除 fork 后该 conftest 一并删除。
 
 | 套件 | 命令 | 现状 |
 |---|---|---|
-| 全套件（唯一） | `.venv\Scripts\python.exe -m pytest -q` | `264 passed`（0 failed / 0 xfailed） |
+| 全套件（唯一） | `.venv\Scripts\python.exe -m pytest -q` | `269 passed`（0 failed / 0 xfailed） |
 
 > 迁移期的「主套件（旧 fork）+ 对拍进度条（`tests_migration/`）」两套件已在 S7 随 fork
 > 一起删除（见 §9.4），旧对拍用例并入了 `tests/`。四个门禁（输出回归 / 幂等 / 收敛 / 对拍）
@@ -323,6 +323,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | **S13** | ALTER 多子句换行：本层 ≥2 个动作词（`ADD`/`DROP`/`MODIFY`…）时各自成行；单动作语句保持同行 | 通用 DDL 用例 | **249 passed** | ✅ 完成（见 §9.15） |
 | **S14** | 官方判成 `Keyword` 的类型名（`json`/`double`/`time`/`year`）按方言声明进 DDL 类型列（不改官方词表） | 方言 DDL 用例 | **259 passed** | ✅ 完成（见 §9.16） |
 | **S15** | 泛型尖括号：`map<string, int>` / `struct<…>` 的**实参逗号**不再是 DDL 字段分隔符（深度感知的字段逗号查找） | 方言 DDL 用例 | **264 passed** | ✅ 完成（见 §9.17） |
+| **S16** | `ON` 锚点补后缀词边界：`ONLY` / `ONLINE` 不再被当成子句头（`online` 曾独占一行） | 通用 DML 用例 | **269 passed** | ✅ 完成（见 §9.18） |
 
 > **方言优先级（用户口径，2026-09-13）**：**Doris / SelectDB 最优先 → 其次 MySQL →
 > Oracle / SQL Server 暂缓**。S8-c（SQL Server）已完成并保留，不回退、也不再往前推
@@ -429,10 +430,10 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 
 ## 9. 断点续做（下一次会话从这里开始）
 
-> 落盘时间：2026-09-13（S15 收工刷新），**S1–S7、S9、S10、S10-b、S8-a~d、S11–S15 全部完成**
+> 落盘时间：2026-09-13（S16 收工刷新），**S1–S7、S9、S10、S10-b、S8-a~d、S11–S16 全部完成**
 > （S7-a~e 五个提交见 §9.4 末尾，S9 见 §9.6，S10 见 §9.7，S10-b 见 §9.8，S8-a 见 §9.9，
 > S8-b 见 §9.10，S8-c 见 §9.11，S8-d 见 §9.12，S11 见 §9.13，S12 见 §9.14，S13 见 §9.15，
-> S14 见 §9.16，S15 见 §9.17），**门槛 `pytest -q` → `264 passed`（0 failed / 0 xfailed）**，
+> S14 见 §9.16，S15 见 §9.17，S16 见 §9.18），**门槛 `pytest -q` → `269 passed`（0 failed / 0 xfailed）**，
 > 收敛门禁 `KNOWN_DIVERGENT` **已清空**，无遗留偏离清单。
 >
 > **本节是「阶段断点卡」**：每阶段的开工点与残留都记在这里。配合
@@ -442,24 +443,29 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 > Oracle / SQL Server 暂缓不做**。**S8-a~d 至此全部收**：Doris/SelectDB 与 MySQL 已适配；
 > SQL Server（S8-c）已完成并保留（不回退、也不再往前推）；Oracle 未开工。
 >
-> **下一步开工点**：方言路线已走完，S11–S15 已收。**当前无「必须做」的缺口**，
+> **下一步开工点**：方言路线已走完，S11–S16 已收。**当前无「必须做」的缺口**，
 > 剩下的都是**登记在案的已知边界**（都不影响现有 fixture，各自需先开新阶段卡再动手）：
 > 1. S11：`DEFAULT` **之后**写的列级约束词（`id int default 0 primary key`）不再进约束列
 >    （判据是「约束列查找止于 `DEFAULT`」，见 §9.13）；
-> 2. S12：`SET` 之外还有同类「纯字母锚点」（`AND` 撞 `expand`、`COMMENT` 撞 `comments`、
->    `\bON` 撞 `only`）—— 现无 fixture 触发（见 §9.14）；
+> 2. S12/S16：`SET`、`ON` 已补词边界；其余纯词锚点（`AND` / `COMMENT` / `OR` / `FROM` …）
+>    仍靠 `re.search` 匹配 —— **实测官方词表里没有含这些子串的关键字**，故无实证缺口，
+>    登记待观察（见 §9.14 / §9.18）；
 > 3. S13：ALTER 的 `CONVERT`（MySQL 专有，`alter table t convert to character set utf8`）
 >    未纳入动作词（见 §9.15）；
 > 4. S15：`_process_parenthesis` 的 **WHERE 分支**没有做尖括号深度感知（DDL 分支已做）；
 >    WHERE 内出现泛型实参逗号的写法极罕见，故未改（见 §9.17）。
 >
-> **若要开新阶段，建议方向**（任选其一，先勘测再写卡）：把 `tests/fixtures/cases/` 之外的
-> 真实 DDL/DML 语料跑一遍做「差异巡检」，从中挑出下一个真正影响可读性的缺口。
+> **巡检结论（2026-09-13，S16 期间做的一轮）**：拿一段真实风格的 Doris 建表 + CTE/窗口/`case`/`having`
+> 查询跑过，输出与既有 fixture 口径**逐项一致**，没有发现新缺口。两处「看着不齐」的形态是**既定口径**，
+> 不是缺陷：①`having` / `comment` 顶列 0 —— 锚点关键字**右端对齐到 `leading_ws`（6）**，7/6 字符的关键字
+> 恰好落到列 0（与 `ddl/sqltest0_s06` 的 `comment` 一致）；②CTE 体的 `select` 顶列 0（见 `cte/sqltest2_s01`）。
+> **要开新阶段就别再靠「感觉」找靶子**：先拿真实语料跑一遍并与既有 fixture 口径对照，确认是**新缺口**
+> 再写卡（参考技能 `sqlfmt-parity` 的元规则一~七）。
 
 ### 9.1 复现当前状态
 
 ```powershell
-.venv\Scripts\python.exe -m pytest -q                   # 门槛：264 passed（0 failed / 0 xfailed）
+.venv\Scripts\python.exe -m pytest -q                   # 门槛：269 passed（0 failed / 0 xfailed）
 .venv\Scripts\python.exe -m pytest -q -k convergence    # 只看收敛门禁（此刻全绿，无 xfail）
 ```
 
@@ -1779,3 +1785,49 @@ create table t (
 实参逗号的写法极罕见）；`tests/test_layout_variants.py` 的既有内联期望未动。见 §9 头部「下一步开工点」。
 
 **回退方式**：`git revert <本阶段提交>`（`align.py` 两处新增 + `layout.py` 一处替换 + 新增 fixture 与 `.input.sql`）。
+
+---
+
+### 9.18 S16 执行卡 + 已收（2026-09-13）：`ON` 锚点补后缀词边界（`ONLY` / `ONLINE`）
+
+**来源**：S16 之前先做了一轮**真实语料巡检**（Doris 建表 + CTE/窗口/`case`/`having` 查询），
+整体与既有 fixture 口径一致；顺手验证了 S12 登记的「纯字母锚点」理论风险，**其中 `ON` 有实证**：
+
+```text
+select * from only t;                    →  from 后被折断： from ⏎  only t;
+select id, offset_id, comments, online from t;
+                                         →  online 独占一行且顶列 0（后面才是 from t）
+```
+
+**根因**：`policy.split_words` 里的锚点是 `r"\bON"` —— **只约束了前缀**。`ONLY` / `ONLINE`
+（官方都判成 `T.Keyword`）会在 `re.search` 下命中；`_split_kwds` 于是把关键字当子句头换行，
+`token_indent` 取该 token 的值（6 字符）→ `nl(leading_ws - 6)` = 列 0。
+
+**为什么只有 `ON` 有实证**：锚点只对**被官方判成 `T.Keyword` 的 token** 生效，而官方词表里
+含其它纯词锚点子串（`AND` / `COMMENT` / `OR` / `FROM` …）的关键字并不存在 —— 所以本轮**只改 `ON`**，
+其余保持原样（既不回归也无收益），登记待观察。
+
+**改动**（`sqlfmt_ext/policy.py` 一行 + 注释）：`r"\bON"` → `r"\bON\b"`。
+`ON COMMIT` / `ON MANUAL` / `ON SCHEDULE` 都是多词 token，`\bON\b` 照样命中（Doris 的
+`\bON\s+(MANUAL|SCHEDULE)\b`、`ddl/sqltest0_s04` 的 `ON COMMIT` 均不受影响）。
+
+**证据**：
+
+```text
+select * from only t;                      ← 修前：from ⏎  only t;
+select id       ,                          ← 修前：… comments , ⏎ online（顶列 0）⏎   from t;
+       offset_id,
+       comments ,
+       online
+  from t
+```
+
+**验收**：`.venv\Scripts\python.exe -m pytest -q` → **`269 passed`（0 failed / 0 xfailed）**。
+原 264 项一项没动（含 `dml` 里 `join … on` 的既有用例）；新增 5 项 =
+`tests/fixtures/cases/dml/sqltest1_s10.sql`（实跑输出定稿）+ `.input.sql` 这一用例进四个门禁
++ `case-integrity` 1。
+
+**残留 / 下一步**：见 §9 头部「下一步开工点」—— **当前无必须做的缺口**，四条已知边界均为极罕见形态；
+巡检方法与本轮结论也已写进 §9 头部，供下次开工参考。
+
+**回退方式**：`git revert <本阶段提交>`（`policy.py` 一行 + 新增 fixture 与 `.input.sql`；纯文本、无不可逆动作）。
