@@ -85,8 +85,8 @@ sqlfmt.py → sqlfmt_ext.format_statements()
   批切分层（SQL Server 的 `GO`）都从这里取声明；未知方言由 `options` 直接报错（不再静默降级）
 - `sqlfmt_ext/options.py` — 默认参数与校验（扩展项 `align_list` / `dialect`）
 
-`PLAN.md` 记录了「官方 0.6.0 与旧 fork 的语义差异清单（U1–U16）」、每处补偿的落点与
-时序约束，以及迁移收口（S1–S7）与后续阶段（S9 注释断行的结构性口径）的进展。
+`PLAN.md` 记录了「官方 0.6.0 与旧 fork 的语义差异清单（U1–U16）」、每处补偿的落点与时序约束，
+以及阶段进展（S1–S7 迁移收口 → S8 方言 → S9–S16 注释 / 对齐 / 子句口径与通用缺口修复）与断点卡（§9）。
 
 ### 测试约定
 
