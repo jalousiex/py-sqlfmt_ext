@@ -123,7 +123,7 @@ S7 删除 fork 后该 conftest 一并删除。
 
 | 套件 | 命令 | 现状 |
 |---|---|---|
-| 全套件（唯一） | `.venv\Scripts\python.exe -m pytest -q` | `234 passed`（0 failed / 0 xfailed） |
+| 全套件（唯一） | `.venv\Scripts\python.exe -m pytest -q` | `239 passed`（0 failed / 0 xfailed） |
 
 > 迁移期的「主套件（旧 fork）+ 对拍进度条（`tests_migration/`）」两套件已在 S7 随 fork
 > 一起删除（见 §9.4），旧对拍用例并入了 `tests/`。四个门禁（输出回归 / 幂等 / 收敛 / 对拍）
@@ -318,6 +318,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | **S8-b** | 方言词表归位（分词层词表也进 `dialects`）+ 补齐 20 个 Doris 类型名 | 方言用例 | **192 passed** | ✅ 完成（见 §9.10） |
 | **S8-c** | SQL Server：`GO` 批分隔符、`[ ]` 标识符、`TOP`、`WITH(NOLOCK)` | 方言用例 | **215 passed** | ✅ 完成（见 §9.11） |
 | **S8-d** | MySQL 方言：补齐 11 个类型名、表选项换行锚点、`ON DUPLICATE KEY UPDATE` 合并、`select straight_join` / `= values(col)` 的表达式内锚点 guard | 方言用例 | **234 passed** | ✅ 完成（见 §9.12） |
+| **S11** | DDL 字段列序：约束列查找不得越过 `DEFAULT`（`default null` 的 `null` 是默认值，不是约束） | 通用 DDL 用例 | **239 passed** | ✅ 完成（见 §9.13） |
 
 > **方言优先级（用户口径，2026-09-13）**：**Doris / SelectDB 最优先 → 其次 MySQL →
 > Oracle / SQL Server 暂缓**。S8-c（SQL Server）已完成并保留，不回退、也不再往前推
@@ -424,9 +425,9 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 
 ## 9. 断点续做（下一次会话从这里开始）
 
-> 落盘时间：2026-09-13（S8-d 收工刷新），**S1–S7、S9、S10、S10-b、S8-a~d 全部完成**
+> 落盘时间：2026-09-13（S11 收工刷新），**S1–S7、S9、S10、S10-b、S8-a~d、S11 全部完成**
 > （S7-a~e 五个提交见 §9.4 末尾，S9 见 §9.6，S10 见 §9.7，S10-b 见 §9.8，S8-a 见 §9.9，
-> S8-b 见 §9.10，S8-c 见 §9.11，S8-d 见 §9.12），**门槛 `pytest -q` → `234 passed`（0 failed / 0 xfailed）**，
+> S8-b 见 §9.10，S8-c 见 §9.11，S8-d 见 §9.12，S11 见 §9.13），**门槛 `pytest -q` → `239 passed`（0 failed / 0 xfailed）**，
 > 收敛门禁 `KNOWN_DIVERGENT` **已清空**，无遗留偏离清单。
 >
 > **本节是「阶段断点卡」**：每阶段的开工点与残留都记在这里。配合
@@ -436,18 +437,18 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 > Oracle / SQL Server 暂缓不做**。**S8-a~d 至此全部收**：Doris/SelectDB 与 MySQL 已适配；
 > SQL Server（S8-c）已完成并保留（不回退、也不再往前推）；Oracle 未开工。
 >
-> **下一步开工点**：方言路线已走完，剩下的都是**共享缺口**（同时影响 Doris/MySQL），
+> **下一步开工点**：方言路线已走完，S11 已收，剩下的都是**共享缺口**（同时影响 Doris/MySQL），
 > 各自需先开新阶段卡再动手：
-> 1. `default null` 的列序：`align._create_field_lines` 假设「约束 → default」，而 `default null`
->    是反序 → `default` 落在类型列后（`PLAN §9.12.1` 残留）；
-> 2. `LIMIT m, n` 被逗号折行、ALTER 多子句不换行；
-> 3. 官方判成 `Keyword` 的类型名（Doris 的 `json`/`map`；MySQL 的 `double`/`enum`/`set`/
->    `time`/`year`）—— 覆盖 = 改写官方条目，与 `dialects` 原则冲突，需专门设计再定。
+> 1. `LIMIT m, n` 被逗号折行、ALTER 多子句不换行；
+> 2. 官方判成 `Keyword` 的类型名（Doris 的 `json`/`map`；MySQL 的 `double`/`enum`/`set`/
+>    `time`/`year`）—— 覆盖 = 改写官方条目，与 `dialects` 原则冲突，需专门设计再定；
+> 3. S11 的已知边界：`DEFAULT` **之后**写的列级约束词（`id int default 0 primary key`）
+>    不再进约束列（判据是「约束列查找止于 `DEFAULT`」，见 §9.13）。
 
 ### 9.1 复现当前状态
 
 ```powershell
-.venv\Scripts\python.exe -m pytest -q                   # 门槛：234 passed（0 failed / 0 xfailed）
+.venv\Scripts\python.exe -m pytest -q                   # 门槛：239 passed（0 failed / 0 xfailed）
 .venv\Scripts\python.exe -m pytest -q -k convergence    # 只看收敛门禁（此刻全绿，无 xfail）
 ```
 
@@ -1461,9 +1462,9 @@ straight_join（通用 guard，doris/None 同样受益）:
 
 **残留 / 下一步**：
 
-- **`default null` 的列序**：`dept_id int(11) default null` 里 `default` 排在 `null` 前，而
-  `align._create_field_lines` 的列序假设是「约束 → default」→ `default` 落在类型列后、`null` 独占约束列。
-  属 `align.py` 的**通用**列序假设（Doris/Postgres 同受影响）→ 另开阶段。
+- ✅ **`default null` 的列序**（已由 **S11** 收，见 §9.13）：`dept_id int(11) default null` 里 `default`
+  排在 `null` 前，而 `align._create_field_lines` 的列序假设是「约束 → default」。
+  属 `align.py` 的**通用**列序假设（Doris/Postgres 同受影响）。
 - `LIMIT m, n` 被逗号折行、ALTER 多子句不换行：**Doris/MySQL 共享缺口**（同上）。
 - Doris 的 `DUPLICATE` 锚点会在 MySQL 的 `on duplicate key update` 里误触发（跨方言组合；
   单独用 `dialect=mysql` 无此问题）。
@@ -1471,3 +1472,69 @@ straight_join（通用 guard，doris/None 同样受益）:
   Oracle / SQL Server 按用户口径**暂缓**（SQL Server 已完成并保留）。
 
 **回退方式**：`git revert <本阶段提交>`（4 处文本改动 + 新增 topic/fixture/断言；纯文本、无不可逆动作）。
+
+---
+
+### 9.13 S11 执行卡 + 已收（2026-09-13）：DDL 字段列序 —— `DEFAULT` 之后的值不是约束
+
+**背景 / 靶子**：`§9.12.1` 残留第 1 条。MySQL 导出的建表几乎每个可空列都写 `DEFAULT NULL`，
+即「**默认值 → 约束**」的**反序**形态（本项目既有 fixture 全是正序，所以一直没暴露）：
+
+```sql
+create table t (dept_id int(11) default null, name varchar(10) not null default 'x' comment '姓名');
+```
+
+```text
+修前：
+create table t (
+       dept_id int(11) default null                            ,
+       name    varchar(10)     not null default 'x' comment 'c'
+);
+```
+
+**根因（实测 dump `_create_field_lines` 的 `field_lines` 得出）**：该方法按**固定列序**逐列查找
+（名称 → 类型 → 约束 → `DEFAULT` → `COMMENT`），每列都从上一列的命中位置**向后**找。于是：
+
+| 字段 | col2（约束） | col3（`DEFAULT`） |
+|---|---|---|
+| `dept_id int(11) default null` | **`null`** ← 越过了 `default`，把默认值当约束 | （空） |
+| `name varchar(10) not null default 'x' comment 'c'` | `not null` | `default` |
+
+`null` 被当成约束列内容后，该行约束列的 offset 落到很右边 → `_create_column_target` 的
+`max_offset` 被抬高 → **整块字段（含其它行）的列基准连带错乱**（元规则一：列对齐错乱先怀疑「归类/分组」）。
+
+**改动**（`sqlfmt_ext/passes/align.py::_create_field_lines`，一处；只写 `Whitespace`，符合 C5）：
+字段内**先定位 `DEFAULT`**，把**约束列**的查找范围（`token_next_by` 的 `end`）收窄到 `default_idx`；
+`DEFAULT` 自身与注释列仍按原范围查找。与方言无关，`doris` / `mysql` / 通用路径同时受益。
+
+**证据**：修后 `field_lines` 归位（col2 空、col3 `default`），输出为：
+
+```text
+create table t (
+       dept_id    int(11)                  default null                                ,
+       name       varchar(10)     not null default 'x'               comment '姓名'    ,
+       amount     decimal(10, 2)           default 0                                   ,
+       flag       tinyint(1)      null                                                 ,
+       created_at datetime        not null default current_timestamp comment '创建时间'
+);
+```
+
+- `dialect="doris"` 与 `dialect="mysql"` 输出**逐字节相同**；
+- 正序形态（`not null default 0`、`default '0' comment …`）输出**未变** —— `ddl/sqltest0_s01`、
+  `ddl/sqltest0_s02`、`mysql/sqltest0_s01` 原样通过；
+- 「约束列空、default 非空」的行会把 `default` 对齐到 default 列（即补一段空白），
+  这与 `_align_create_columns` docstring 里 `created_at TIMESTAMP … DEFAULT CURRENT_TIMESTAMP`
+  的既有口径**同形**，不是新引入的形态。
+
+**验收**：`.venv\Scripts\python.exe -m pytest -q` → **`239 passed`（0 failed / 0 xfailed）**。
+原 234 项一项没动；新增 5 项 = `tests/fixtures/cases/ddl/sqltest0_s07.sql`（**实跑输出定稿**，
+沿用 S7-d 做法）+ `sqltest0_s07.input.sql`（单行原始 DDL）这一用例进四个门禁
+（输出回归 / 幂等 ×2 / 收敛）+ `case-integrity` 1。
+
+**已知边界（登记，不在本轮修）**：判据是「约束列查找**止于** `DEFAULT`」→ 写在 `DEFAULT`
+**之后**的列级约束词（`id int default 0 primary key`）不再进约束列。常见形态不受影响
+（`not null` 在 `default` 前；主键多为表级 `primary key (id)`）。
+
+**残留 / 下一步**：见 §9 头部「下一步开工点」（`LIMIT m, n` 折行 / ALTER 多子句、官方 `Keyword` 类型名）。
+
+**回退方式**：`git revert <本阶段提交>`（`align.py` 一处 + 新增 fixture 与 `.input.sql`；纯文本、无不可逆动作）。

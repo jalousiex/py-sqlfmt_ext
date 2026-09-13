@@ -118,16 +118,23 @@ class AlignMixin:
         prev_idx = 0
         end_idx, end_token = tlist.token_next_by(m=(T.Punctuation, ","), idx=prev_idx)
         while end_idx:
+            # 字段内先定位 DEFAULT：**紧跟其后的 `NULL` 是默认值本身**（MySQL 导出的
+            # `dept_id int(11) default null`），不能再被约束列取走 —— 取走会让该字段的
+            # 约束列落在很右边的 `null` 上，整块字段的对齐基准被抬高（列序错乱）。
+            default_idx, _ = tlist.token_next_by(
+                idx=prev_idx, end=end_idx, m=(T.Keyword, ["DEFAULT"])
+            )
+            constraints_end = default_idx if default_idx is not None else end_idx
             field_line = []
-            for token_type in (
-                {},
-                {"t": T.Name.Builtin, "i": sql.Function},
-                {"m": (T.Keyword, ["NOT NULL", "NULL", "PRIMARY KEY"])},
-                {"m": (T.Keyword, ["DEFAULT"])},
-                {"m": (T.Keyword, "COMMENT")},
+            for token_type, col_end in (
+                ({}, end_idx),
+                ({"t": T.Name.Builtin, "i": sql.Function}, end_idx),
+                ({"m": (T.Keyword, ["NOT NULL", "NULL", "PRIMARY KEY"])}, constraints_end),
+                ({"m": (T.Keyword, ["DEFAULT"])}, end_idx),
+                ({"m": (T.Keyword, "COMMENT")}, end_idx),
             ):
                 if token_type:
-                    idx, token = tlist.token_next_by(idx=prev_idx, end=end_idx, **token_type)
+                    idx, token = tlist.token_next_by(idx=prev_idx, end=col_end, **token_type)
                 else:
                     idx, token = tlist.token_next(idx=prev_idx, skip_cm=True)
                 if idx:

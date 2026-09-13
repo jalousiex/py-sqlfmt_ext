@@ -1,0 +1,7 @@
+create table t (
+       dept_id    int(11)                  default null                                ,
+       name       varchar(10)     not null default 'x'               comment '姓名'    ,
+       amount     decimal(10, 2)           default 0                                   ,
+       flag       tinyint(1)      null                                                 ,
+       created_at datetime        not null default current_timestamp comment '创建时间'
+);

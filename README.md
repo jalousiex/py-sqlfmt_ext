@@ -98,7 +98,7 @@ sqlfmt.py → sqlfmt_ext.format_statements()
   （`xfail(strict=True)` 会在修好时主动报错提示）
 - 仓库根 `conftest.py` 会校验 `sqlparse.__file__` 来自 site-packages —— 防止「仓库内 vendored 包
   遮蔽官方包」的老问题复发
-- 门槛：**`234 passed`（0 failed / 0 xfailed）**；收敛门禁 `KNOWN_DIVERGENT` 已清空
+- 门槛：**`239 passed`（0 failed / 0 xfailed）**；收敛门禁 `KNOWN_DIVERGENT` 已清空
 
 ### 默认格式化参数
 
