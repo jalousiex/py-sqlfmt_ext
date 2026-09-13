@@ -128,7 +128,17 @@ class AlignMixin:
             field_line = []
             for token_type, col_end in (
                 ({}, end_idx),
-                ({"t": T.Name.Builtin, "i": sql.Function}, end_idx),
+                # 类型列：`Name.Builtin` / `Function`，外加方言声明的「官方判成 Keyword
+                # 的类型名」（`json` / `double` / `time` / `year`，见 `dialects.Dialect.
+                # type_name_keywords`）—— 不声明则字段名与类型粘在一起、该列基准被抬高。
+                (
+                    {
+                        "t": T.Name.Builtin,
+                        "i": sql.Function,
+                        "m": (T.Keyword, self.type_name_keywords, True),
+                    },
+                    end_idx,
+                ),
                 ({"m": (T.Keyword, ["NOT NULL", "NULL", "PRIMARY KEY"])}, constraints_end),
                 ({"m": (T.Keyword, ["DEFAULT"])}, end_idx),
                 ({"m": (T.Keyword, "COMMENT")}, end_idx),

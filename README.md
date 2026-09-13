@@ -79,7 +79,8 @@ sqlfmt.py → sqlfmt_ext.format_statements()
 - `sqlfmt_ext/filters/` — 替换官方的空白 / 操作符 filter
 - `sqlfmt_ext/policy.py` — **通用**关键字与多词关键字口径（`LATERAL VIEW`、`OVER(` 的优先级补丁等）
 - `sqlfmt_ext/dialects.py` — **方言的唯一真身**：`Dialect(name, multiword_patches,
-  precedence_patches, extra_lexer_rules, extra_keywords, extra_split_words, batch_separator, notes)`。
+  precedence_patches, extra_lexer_rules, extra_keywords, extra_split_words, type_name_keywords,
+  batch_separator, notes)`。
   分词层（方言关键字与**类型名**、方言专属优先级规则）、布局层（`DISTRIBUTED BY` 等换行锚点）、
   批切分层（SQL Server 的 `GO`）都从这里取声明；未知方言由 `options` 直接报错（不再静默降级）
 - `sqlfmt_ext/options.py` — 默认参数与校验（扩展项 `align_list` / `dialect`）
@@ -98,7 +99,7 @@ sqlfmt.py → sqlfmt_ext.format_statements()
   （`xfail(strict=True)` 会在修好时主动报错提示）
 - 仓库根 `conftest.py` 会校验 `sqlparse.__file__` 来自 site-packages —— 防止「仓库内 vendored 包
   遮蔽官方包」的老问题复发
-- 门槛：**`249 passed`（0 failed / 0 xfailed）**；收敛门禁 `KNOWN_DIVERGENT` 已清空
+- 门槛：**`259 passed`（0 failed / 0 xfailed）**；收敛门禁 `KNOWN_DIVERGENT` 已清空
 
 ### 默认格式化参数
 

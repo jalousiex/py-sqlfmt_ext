@@ -29,6 +29,10 @@ class Dialect:
     extra_keywords: tuple = ()
     # 追加到 ``LayoutPass.split_words`` 的换行锚点词（只影响换行，不影响分词）
     extra_split_words: tuple = ()
+    # **官方判成 ``Keyword``** 的类型名：只用于 DDL 字段列的归类（对齐层），**不改分词表**。
+    # 这类词不像 ``Name.Builtin`` 那样被 ``_create_field_lines`` 的类型列接受 → 字段名与类型
+    # 粘在一起、该行的列基准被抬高（U16 同机理的另一种表现）。声明出来即够，官方词表一个字不动。
+    type_name_keywords: tuple = ()
     # 批分隔符（SQL Server 的 ``GO``）：**独占一个 token** 时把输入切成多批。
     # 空串 = 该方言没有批分隔符概念（只按 ``;`` 切分）。输出恒用这里的字面量。
     batch_separator: str = ""
@@ -89,12 +93,23 @@ _DORIS_SPLIT_WORDS = (
     r"DISTRIBUTED\s+BY\b",
 )
 
+# 官方判成 ``Keyword``（不是 ``Name.Builtin``）的类型名 —— 实测得出，见 `PLAN §9.16`：
+#   * ``JSON``：Doris 的 ``json`` 列类型（MySQL 同）；
+#   * ``DOUBLE`` / ``TIME`` / ``YEAR``：MySQL 的类型名；
+#   * ``MAP`` **不在其列**：官方判成 ``Name.Builtin``（旧记录有误，2026-09-13 实测更正），
+#     ``map<string, int>`` 的问题只是**尖括号实参里的逗号**被当字段分隔符，属另一阶段；
+#   * ``ENUM`` / ``SET`` 带参数时被官方「函数名」正则截成 ``Name`` + ``Function`` → 正常对齐，
+#     无需声明。
+_DORIS_TYPE_KEYWORDS = ("JSON",)
+_MYSQL_TYPE_KEYWORDS = ("DOUBLE", "JSON", "TIME", "YEAR")
+
 _DORIS = Dialect(
     name="doris",
     multiword_patches=True,
     precedence_patches=True,
     extra_keywords=_DORIS_EXTRA_KEYWORDS,
     extra_split_words=_DORIS_SPLIT_WORDS,
+    type_name_keywords=_DORIS_TYPE_KEYWORDS,
     notes="SelectDB 同族；官方缺失，按 MySQL 兼容适配",
 )
 
@@ -176,6 +191,7 @@ DIALECTS = {
         extra_lexer_rules=_MYSQL_EXTRA_LEXER_RULES,
         extra_keywords=_MYSQL_EXTRA_KEYWORDS,
         extra_split_words=_MYSQL_SPLIT_WORDS,
+        type_name_keywords=_MYSQL_TYPE_KEYWORDS,
         notes="建表类型名 / 表选项锚点 / ON DUPLICATE KEY UPDATE",
     ),
     "doris": _DORIS,
@@ -185,6 +201,7 @@ DIALECTS = {
         precedence_patches=True,
         extra_keywords=_DORIS_EXTRA_KEYWORDS,
         extra_split_words=_DORIS_SPLIT_WORDS,
+        type_name_keywords=_DORIS_TYPE_KEYWORDS,
         notes="与 doris 同族，共用声明",
     ),
     # 只要「优先级补丁」（``over (``），**不要** Doris 的多词合并（``PARTITION BY`` /
@@ -216,6 +233,11 @@ def available():
 def split_words_for(name):
     """该方言追加的换行锚点词（供 ``LayoutPass`` 使用）。"""
     return tuple(get_dialect(name).extra_split_words)
+
+
+def type_name_keywords_for(name):
+    """该方言声明的「官方判成 Keyword 的类型名」（供对齐层的 DDL 字段列归类使用）。"""
+    return tuple(get_dialect(name).type_name_keywords)
 
 
 def batch_separator_for(name):

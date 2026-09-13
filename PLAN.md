@@ -123,7 +123,7 @@ S7 删除 fork 后该 conftest 一并删除。
 
 | 套件 | 命令 | 现状 |
 |---|---|---|
-| 全套件（唯一） | `.venv\Scripts\python.exe -m pytest -q` | `249 passed`（0 failed / 0 xfailed） |
+| 全套件（唯一） | `.venv\Scripts\python.exe -m pytest -q` | `259 passed`（0 failed / 0 xfailed） |
 
 > 迁移期的「主套件（旧 fork）+ 对拍进度条（`tests_migration/`）」两套件已在 S7 随 fork
 > 一起删除（见 §9.4），旧对拍用例并入了 `tests/`。四个门禁（输出回归 / 幂等 / 收敛 / 对拍）
@@ -321,6 +321,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | **S11** | DDL 字段列序：约束列查找不得越过 `DEFAULT`（`default null` 的 `null` 是默认值，不是约束） | 通用 DDL 用例 | **239 passed** | ✅ 完成（见 §9.13） |
 | **S12** | LIMIT 子句：`LIMIT m, n` 不按列表展开；`SET` 锚点补词边界（原先子串命中 `OFFSET`，把 `offset` 拆成独立一行） | 通用 DML 用例 | **244 passed** | ✅ 完成（见 §9.14） |
 | **S13** | ALTER 多子句换行：本层 ≥2 个动作词（`ADD`/`DROP`/`MODIFY`…）时各自成行；单动作语句保持同行 | 通用 DDL 用例 | **249 passed** | ✅ 完成（见 §9.15） |
+| **S14** | 官方判成 `Keyword` 的类型名（`json`/`double`/`time`/`year`）按方言声明进 DDL 类型列（不改官方词表） | 方言 DDL 用例 | **259 passed** | ✅ 完成（见 §9.16） |
 
 > **方言优先级（用户口径，2026-09-13）**：**Doris / SelectDB 最优先 → 其次 MySQL →
 > Oracle / SQL Server 暂缓**。S8-c（SQL Server）已完成并保留，不回退、也不再往前推
@@ -427,10 +428,10 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 
 ## 9. 断点续做（下一次会话从这里开始）
 
-> 落盘时间：2026-09-13（S13 收工刷新），**S1–S7、S9、S10、S10-b、S8-a~d、S11、S12、S13 全部完成**
+> 落盘时间：2026-09-13（S14 收工刷新），**S1–S7、S9、S10、S10-b、S8-a~d、S11、S12、S13、S14 全部完成**
 > （S7-a~e 五个提交见 §9.4 末尾，S9 见 §9.6，S10 见 §9.7，S10-b 见 §9.8，S8-a 见 §9.9，
-> S8-b 见 §9.10，S8-c 见 §9.11，S8-d 见 §9.12，S11 见 §9.13，S12 见 §9.14，S13 见 §9.15），
-> **门槛 `pytest -q` → `249 passed`（0 failed / 0 xfailed）**，
+> S8-b 见 §9.10，S8-c 见 §9.11，S8-d 见 §9.12，S11 见 §9.13，S12 见 §9.14，S13 见 §9.15，
+> S14 见 §9.16），**门槛 `pytest -q` → `259 passed`（0 failed / 0 xfailed）**，
 > 收敛门禁 `KNOWN_DIVERGENT` **已清空**，无遗留偏离清单。
 >
 > **本节是「阶段断点卡」**：每阶段的开工点与残留都记在这里。配合
@@ -440,11 +441,11 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 > Oracle / SQL Server 暂缓不做**。**S8-a~d 至此全部收**：Doris/SelectDB 与 MySQL 已适配；
 > SQL Server（S8-c）已完成并保留（不回退、也不再往前推）；Oracle 未开工。
 >
-> **下一步开工点**：方言路线已走完，S11 / S12 / S13 已收，剩下的都是**共享缺口**（与方言无关），
+> **下一步开工点**：方言路线已走完，S11 / S12 / S13 / S14 已收，剩下的都是**共享缺口**，
 > 各自需先开新阶段卡再动手：
-> 1. **官方判成 `Keyword` 的类型名**（Doris 的 `json`/`map`；MySQL 的 `double`/`enum`/`set`/
->    `time`/`year`）—— 它们落 `T.Keyword` 而不是 `Name.Builtin`，覆盖 = 改写官方条目，与
->    `dialects` 原则冲突，需专门设计再定（现状：作类型名时列对齐差一格）；
+> 1. **泛型尖括号里的逗号**：`map<string, int>` 的 `<…>` 实参逗号被当 DDL **字段分隔符** →
+>    字段被切错、逐段错位（Doris 的 `MAP` 官方判成 `Name.Builtin`，类型列本身没问题）。
+>    需要一个「尖括号内的逗号不作字段分隔」的结构判据（与 `_create_field_lines` 的按 `,` 切段配套）；
 > 2. S11 的已知边界：`DEFAULT` **之后**写的列级约束词（`id int default 0 primary key`）
 >    不再进约束列（判据是「约束列查找止于 `DEFAULT`」，见 §9.13）；
 > 3. S12 的已知边界：`SET` 之外还有同类「纯字母锚点」（`AND` 撞 `expand`、`COMMENT` 撞
@@ -453,7 +454,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 ### 9.1 复现当前状态
 
 ```powershell
-.venv\Scripts\python.exe -m pytest -q                   # 门槛：249 passed（0 failed / 0 xfailed）
+.venv\Scripts\python.exe -m pytest -q                   # 门槛：259 passed（0 failed / 0 xfailed）
 .venv\Scripts\python.exe -m pytest -q -k convergence    # 只看收敛门禁（此刻全绿，无 xfail）
 ```
 
@@ -1261,7 +1262,9 @@ HLL INT16 INT32 INT64 INT128 IPV4 IPV6 JSONB LARGEINT QUANTILE_STATE STRUCT VARI
 
 - `json` 在官方词表里是 `T.Keyword`（不是 `Name.Builtin`）→ **未覆盖**：覆盖它等于「改写官方已有
   条目」，与 `dialects.py` 的原则冲突。真要用（Doris 里 `json` 是类型名，行内对齐会差一格）需另开一段。
-- `MAP` 同理由（官方是 `Keyword`）未动。
+- ⚠️ **更正（2026-09-13，S14 实测）**：`MAP` 官方判成 **`Name.Builtin`**（不是 `Keyword`），本来就
+  能进 DDL 类型列 —— `map<string, int>` 的错乱来自**尖括号实参里的逗号**被当成字段分隔符，属另一处
+  缺口（见 §9 头部「下一步开工点」）。`JSON` 官方确是 `T.Keyword`，已由 **S14** 收（见 §9.16）。
 - 下一步 **S8-c（SQL Server 适配）**：`GO` 批分隔符、`[ ]` 标识符、`TOP`、`WITH(NOLOCK)`。
 
 **回退方式**：`git revert <本阶段提交>`（5 处文本改动 + 新增 fixture/断言；纯文本、无不可逆动作）。
@@ -1380,7 +1383,7 @@ GO batch  sqlserver: select 1 \n GO \n\n select 2  generic: select 1 go \n\n sel
 | 3 | `ON DUPLICATE KEY UPDATE` | `duplicate` 落 `Name`、整段未合并 → 被切成 `on duplicate key` / `update b =` / `values(b);` 三行 | **修**：多词合并成一个 `Keyword` |
 | 4 | `STRAIGHT_JOIN` / `VALUES(col)` | `straight_join` 被 `policy._join_words` 命中 → `select` 后被硬断行（`select\nstraight_join a.id  ,`）；`b = values(b)` 里的 `values` 撞通用锚点 → 右值被甩到下一行 | **修**：加**结构性 guard**「锚点紧跟 `SELECT`（select 修饰符）或紧跟 `=`（赋值右值）时不换行」 |
 | 5 | 索引定义 | 复查：`idx_dept (dept_id)` 被官方 `group_functions` 包成 `Function` → 落在**类型列**并与真实类型列对齐，输出**已对齐** | **不改**（不是缺陷；改「整体一项」只会让逗号跑到最右，属风格取舍） |
-| 6 | `DOUBLE/ENUM/SET/JSON/TIME/YEAR` | 官方判成 `Keyword`（不是 `Name.Builtin`） | **不改**（覆盖 = 改写官方条目，与 `dialects` 原则冲突），登记 |
+| 6 | `DOUBLE/ENUM/SET/JSON/TIME/YEAR` | 官方判成 `Keyword`（不是 `Name.Builtin`） | **S14 已收**（见 §9.16）：不覆盖词表，改为 `Dialect.type_name_keywords` 声明、只由对齐层的 DDL 类型列消费。⚠️ 更正：`ENUM`/`SET` 带参数时被官方「函数名」正则先截成 `Name` + `Function` → 本来就能正常对齐，无需声明；`MAP` 官方是 `Name.Builtin`（旧记有误） |
 | 7 | `LIMIT 10, 20` / ALTER 多子句 | 被逗号折行 / 后半段全挤一行 —— **Doris 同样如此**（勘测里 `mysql == doris : True` 的那条 ALTER 即证据） | **不修**（Doris/MySQL 共享缺口，另开阶段） |
 
 **目标（本轮只做这一件）**：让 `mysql` 成为**行为真的不同**的方言，并修掉 1–5。声明形态沿用
@@ -1658,3 +1661,57 @@ character set utf8`，MySQL 专有）纳入动作词 —— 属已知边界；�
 子句内部的二次折行沿用 `_split_kwds` 的既有口径，未在本轮重定。
 
 **回退方式**：`git revert <本阶段提交>`（`layout.py` 三处 + 新增 fixture 与 `.input.sql`；纯文本、无不可逆动作）。
+
+---
+
+### 9.16 S14 执行卡 + 已收（2026-09-13）：官方判成 `Keyword` 的类型名（按方言声明进类型列）
+
+**背景**：`§9.12` 第 6 条登记的老问题 —— 一批类型名在官方词表里是 `T.Keyword`（不是 `Name.Builtin`），
+于是 `_create_field_lines` 的**类型列**取不到它们 → 字段名与类型粘在一起、该行的列基准被抬高
+（U16 同机理的另一种表现）。旧结论是「覆盖 = 改写官方条目，与 `dialects` 原则冲突，需专门设计」。
+
+**勘测（本轮先实测再定方案，纠正了两条旧记载）**：
+
+| 词 | 官方 ttype（实测） | 结论 |
+|---|---|---|
+| `json` | `T.Keyword` | **要修**（Doris / MySQL 的列类型） |
+| `double` / `time` / `year` | `T.Keyword` | **要修**（MySQL） |
+| `map` | **`Name.Builtin`** | ⚠️ 旧记「官方是 `Keyword`」**有误** —— 类型列本来就能取到；`map<string, int>` 的错乱是**尖括号实参里的逗号**被当字段分隔符，属另一缺口 |
+| `enum('x','y')` / `set('p')` | `Name` + `Function`（被官方「函数名」正则先截走） | **不需要修** —— 本来就正常对齐 |
+
+**设计（不覆盖、不改写官方词表）**：把「哪些词在本方言里是类型名」作为**方言声明**
+（`Dialect.type_name_keywords`）→ 只有**对齐层**的 DDL 类型列消费它。分词表一个字不动，
+与 `dialects.py` 的「只用追加声明」原则一致；`dialect=None` 行为完全不变。
+
+**改动（4 个文件）**：
+
+| 文件 | 改动 |
+|---|---|
+| `dialects.py` | `Dialect` 增加 `type_name_keywords: tuple`（Doris：「`JSON`」；MySQL：`DOUBLE`/`JSON`/`TIME`/`YEAR`）+ `type_name_keywords_for(name)` |
+| `passes/layout.py` | `__init__` 把声明的词编译成**带词边界**的正则存到 `self.type_name_keywords`（避免 `TIME` 之类在别的关键字内部被 `re.search` 命中） |
+| `passes/align.py` | `_create_field_lines` 的类型列判据加上 `"m": (T.Keyword, self.type_name_keywords, True)`（`imt` 的 `i`/`m`/`t` 是 **OR** 关系） |
+| `tests/` | 新增 `cases/mysql/sqltest0_s02.sql`（6 个类型名 + `time default null` 组合）、`cases/dialect/sqltest2_s01.sql`（Doris `json`），各带 `.input.sql` |
+
+**证据**（左 = 修后该方言，右 = `dialect=None` 对照）：
+
+```text
+mysql:       a int           ,        generic:  a        int           ,
+             b double        ,                  b double               ,
+             e json          ,                  e json                 ,
+             f time          ,                  f time                 ,
+             g year          ,                  g year                 ,
+             h varchar(10)                    h        varchar(10)
+
+doris:       b    json       ,        generic:  b json            ,   ← 字段名与类型粘连
+```
+
+**验收**：`.venv\Scripts\python.exe -m pytest -q` → **`259 passed`（0 failed / 0 xfailed）**。
+原 249 项一项没动；新增 10 项 = 2 个 fixture × （四个门禁 + `case-integrity` 1）。
+
+**残留 / 下一步**：
+- **尖括号泛型**：`map<string, int>` 的 `<…>` 内逗号仍被当字段分隔符（Doris），需另开阶段
+  —— 已升为 §9 头部「下一步开工点」第 1 条；
+- S14 **没有**动分词层，因此 `json` / `double` 在**非 DDL** 上下文（表达式、列名）仍是 `Keyword`
+  —— 这是有意为之（改分词会波及全局，且与「不改写官方条目」冲突）。
+
+**回退方式**：`git revert <本阶段提交>`（3 处代码 + 新增 fixture 与 `.input.sql`；纯文本、无不可逆动作）。

@@ -53,6 +53,12 @@ class LayoutPass(AlignMixin):
         # 模块级元组，写成类属性就成了导入期快照，方言层后续追加的词永远看不到
         # （见 `PLAN §9.9`）。
         self.split_words = tuple(policy.split_words) + dialects.split_words_for(opts.get("dialect", "doris"))
+        # 「官方判成 Keyword 的类型名」：编译成**带词边界**的正则（供 `_create_field_lines`
+        # 的类型列判定；避免 `TIME` 之类在别的关键字内部被 `re.search` 命中）
+        self.type_name_keywords = tuple(
+            r"\b%s\b" % re.escape(word)
+            for word in dialects.type_name_keywords_for(opts.get("dialect", "doris"))
+        )
 
     def _flatten_up_to_token(self, token):
         """Yields all tokens up to token but excluding current."""
