@@ -10,19 +10,29 @@ SQL Server（`dialect="sqlserver"`）已适配 `GO` 批分隔符、`TOP`、`WITH
 
 ## 安装
 
-```bash
-# 开发环境（本仓库内）：可编辑安装，改代码即时生效
-python -m pip install -r requirements-dev.txt
+**工具链统一用 uv**（本项目自 E2 起不再走 pip）；开发环境与使用环境分开，互不干扰：
 
-# 使用环境：装发布物（wheel），与开发环境隔离
-pip install sqlfmt_ext-0.1.0-py3-none-any.whl
+```powershell
+# 开发环境（本仓库内）：建 / 同步 .venv —— 可编辑安装，改代码即时生效
+uv sync
+
+# 需要「检出即复现」时用（lock 与本地不一致会直接报错，不静默改环境）
+uv sync --frozen
 ```
 
-运行依赖 `sqlparse>=0.6,<0.7` 见 `pyproject.toml`，安装时自动解析。
+运行依赖 `sqlparse>=0.6,<0.7` 见 `pyproject.toml`，**实际解析版本记在 `uv.lock`**（已入库）；
+开发依赖（pytest）在 `pyproject.toml` 的 `[dependency-groups] dev`。
+解释器版本由仓库根 **`.python-version`**（3.11）决定 —— 开发环境与门禁都用它。
+
+**使用环境不是装进 py 主解释器**：日常使用（含 DBeaver 等外部调用）走 **`uv tool install`**，
+装到 uv 的**隔离 tool 环境**，命令落在 `%USERPROFILE%\.local\bin\sqlfmt_ext.exe` —— 见「构建与发布」。
+
+> **uv 不读 pip 的配置文件**（本机 pip 里配的内网源对它无效）—— 源的配置方式见「构建与发布」里的
+> 「uv 的包索引」小节。
 
 ## 使用
 
-```bash
+```powershell
 # 无参数：打印用法（选项一览）
 sqlfmt_ext
 
@@ -43,20 +53,24 @@ python -m sqlfmt_ext.cli path/to/file.sql
 python -c "from sqlfmt_ext import format_statements; print(format_statements('select 1'))"
 ```
 
+> 三种写法**不分环境**：`sqlfmt_ext` 命令来自 `uv tool install` 的隔离环境（使用形态），
+> `python -m …` 用的是当前解释器（开发环境 `.venv`，或 tool 环境自己的解释器）。
+
 ### DBeaver 外部格式化程序
 
 | 栏 | 填 |
 |------|------|
-| 程序 | `…\pythoncore-3.14-64\Scripts\sqlfmt_ext.exe` |
+| 程序 | `%USERPROFILE%\.local\bin\sqlfmt_ext.exe` |
 | 参数 | `${file}` |
 
-也可用 `python.exe` + 参数 `-m sqlfmt_ext.cli ${file}`（不依赖 PATH 与 exe 落点）。
+也可用解释器 + 参数 `-m sqlfmt_ext.cli ${file}`（不依赖 PATH 与 exe 落点）——
+tool 环境的解释器在 `uv tool dir` 下的 `sqlfmt-ext\Scripts\python.exe`。
 结果走 stdout、由 DBeaver 回填编辑器，**不要加 `--in-place`**。
 
 ## 测试
 
-```bash
-python -m pytest -q
+```powershell
+.venv\Scripts\python.exe -m pytest -q
 ```
 
 覆盖：用例完整性、格式化输出回归（fixture 即期望）、收敛性（压平输入空白后输出不变）、
@@ -65,24 +79,58 @@ python -m pytest -q
 
 ## 构建与发布
 
-```bash
-# 打主包 wheel → scripts/output/wheels/wheelhouse/<名>-<版本>/
-python scripts/build_package.py
-
-# 连依赖一起打成离线 ZIP（内网 / 无源环境分发）
-python scripts/build_package.py --with-deps
+```powershell
+# 打主包 wheel（脚本内部走 `uv build`）→ scripts/output/wheels/wheelhouse/<名>-<版本>/
+python scripts\build_package.py
 
 # 指定新版本号（同时改写 pyproject.toml 的 version）
-python scripts/build_package.py 0.1.1
+python scripts\build_package.py 0.1.1
 
-# 把最新构建物装进主环境
-# 默认取 SQLFMT_MAIN_PYTHON 或 %LOCALAPPDATA%\Python\pythoncore-3.14-64
-python scripts/install_to_main.py
+# 连依赖一起打成离线 ZIP（内网 / 无源环境分发）
+python scripts\build_package.py --with-deps
 ```
 
-VSCode 任务：`安装：可编辑到项目 .venv` / `构建：打 wheel` / `部署：装到主环境（脱开 venv）` / `测试：门禁 pytest`。
-部署任务用 `"type": "process"` 且直接取 `.vscode/settings.json` 里 `sqlfmt.mainEnvPython` 指定的解释器
-（不经 shell、不走 PATH），因此**不受当前激活的 .venv 影响**；换机器只改这一个配置键。
+**部署 = `uv tool install`（装进隔离 tool 环境，不动 py 主解释器）**：
+
+```powershell
+# 命令落在 %USERPROFILE%\.local\bin\sqlfmt_ext.exe
+# 同版本重新部署**必须带 --reinstall** —— 不加时 uv 只做 Checked、不重装（实测）
+uv tool install --force --reinstall "scripts\output\wheels\wheelhouse\sqlfmt_ext-0.1.0\sqlfmt_ext-0.1.0-py3-none-any.whl"
+
+# 查看 / 卸载
+uv tool list
+uv tool uninstall sqlfmt_ext
+```
+
+> 版本号变了要同步两处：上面这行命令（README）与 `.vscode/tasks.json` 的「部署」任务。
+
+**部署后自检必须在项目目录之外跑** —— cwd 在仓库内时源码会被塞进 `sys.path`，命中的是仓库源码
+而不是安装副本，结果不可信：
+
+```powershell
+cd $env:TEMP
+& "$env:USERPROFILE\.local\bin\sqlfmt_ext.exe" "<仓库>\tests\fixtures\cases\ddl\sqltest0_s07.input.sql"   # 输出应与同名 .sql 一致
+```
+
+VSCode 任务：`开发：uv sync` / `构建：打 wheel` / `部署：uv tool install（隔离 tool 环境）` / `测试：门禁 pytest`。
+部署任务用 `"type": "process"` 直接调 `uv`（不经 shell、不走 PATH）。
+
+**uv 的包索引（换机器必看）**：uv **不读 pip 的配置文件**，本机 pip 里配的内网源对它无效。
+本组织做法是写**用户级** `%APPDATA%\uv\uv.toml`：
+
+```toml
+index-url = "https://<内网源主机>/repository/pypi-proxy/simple"
+```
+
+换机器 / 换源三选一：① 照上面写用户级 `uv.toml`；② 设 `$env:UV_INDEX_URL='<源地址>'`；
+③ 单次命令加 `--index-url <源地址>`。
+
+> ⚠️ **`uv.lock` 会记录解析时用的源地址** —— 换源后必须重跑 `uv lock`，
+> 否则 `uv lock --check` 与 `uv sync --frozen` 会判定与本地不一致。
+
+**唯一保留的 pip 用法**：`--with-deps` 的 `python -m pip download` —— uv 的 `pip` 子命令**没有 `download`**，
+而离线 ZIP 要的是「只取 wheel、不安装」（`uv pip install --target` 是解包安装），无 uv 等价物。
+该例外登记在 `.claude/plan/status.md` §3.5，别顺手「统一」掉。
 
 发布到源（预留，尚未执行）：拿到 wheel 后上传到目标源 —— 官方源可 `python -m twine upload dist/*.whl`，
 内网源则把 wheel（连同 `--with-deps` 拉到的依赖）放进源目录。
@@ -93,9 +141,10 @@ VSCode 任务：`安装：可编辑到项目 .venv` / `构建：打 wheel` / `�
 |------|------|
 | `sqlfmt_ext/cli.py` | CLI 入口（`sqlfmt_ext` 命令与 `python -m sqlfmt_ext.cli` 共用同一份 main） |
 | `sqlfmt_ext/` | 补偿层：官方 filter 的替换/追加 + 本项目 pass（分组、布局、对齐、分词兜底） |
-| `scripts/` | 构建与部署：`build_package.py`（出 wheel / 离线 ZIP）、`install_to_main.py`（装进主环境） |
+| `scripts/build_package.py` | 构建：`uv build` 出 wheel（可选 `--with-deps` 打离线 ZIP，见「构建与发布」） |
 | `tests/` | pytest 测试与 SQL 夹具（`tests/fixtures/cases/<topic>/*.sql`） |
-| `requirements-dev.txt` | 开发依赖（pip / build / pytest + `-e .`） |
+| `uv.lock` | **依赖锁定**（已入库）：`uv sync` 据它装环境；换源后需重跑 `uv lock` |
+| `.python-version` | 解释器基线（开发环境用）—— `uv sync` / 门禁的解释器版本 |
 | `.claude/rules/` | 阶段推进协议（开工四步 / 阶段内铁律 / 收工六步 / 汇报格式） |
 | `.claude/plan/` | **计划真身**：大纲 / 状态 / 阶段卡 / 差异 / 归档（见下表） |
 

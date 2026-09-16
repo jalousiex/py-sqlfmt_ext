@@ -1,4 +1,4 @@
-"""仓库根 conftest：**守卫**「必须用 pip 装的官方 sqlparse」。
+"""仓库根 conftest：**守卫**「必须用已安装的官方 sqlparse」（E2 起由 `uv sync` 装进项目 `.venv`）。
 
 历史：仓库内曾 vendored 一份旧 fork（``sqlparse/``），它会遮蔽 site-packages 里的官方包；
 迁移期靠把仓库根挪到 ``sys.path`` 末尾来让官方包胜出（S7-b 起提到根级）。

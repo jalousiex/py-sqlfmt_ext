@@ -105,6 +105,7 @@ U11 落地后 **L3 / L6 / L7 整条消失**，L1 少 4 个、L2 少 1 个、A1 �
 | 2026-09-13 | **S8-a~d 收**：方言层从「装饰性模块」变成真开关（单一真身 + 未知方言报错 + `GO` 批切分 + MySQL 适配）→ `234 passed` |
 | 2026-09-13 | **S11–S16 收**：DDL 列序、LIMIT、ALTER 多子句、`Keyword` 类型名、泛型尖括号、`ON` 词边界 → `269 passed` |
 | 2026-09-13 | **计划重构**：根 `PLAN.md` 拆分为 `.claude/plan/{PLAN,status,stages,diffs,history}.md`（大纲 / 状态 / 阶段 / 差异 / 归档），消除 §3 与 §5 两张重复状态表、重复的 S6b 段落与重复的 §9.4；门槛数字收敛为 `status.md` 单一真身 |
+| 2026-09-16 | **E2 收工（工具链切 uv + 部署改 `uv tool install`）**：开发依赖迁 `[dependency-groups] dev`、`uv.lock` 与 `.python-version` 入库、构建改 `uv build`、部署改 `uv tool install`（隔离 tool 环境 → `%USERPROFILE%\.local\bin\sqlfmt_ext.exe`）、删 `install_to_main.py` 与 `requirements-dev.txt`、`requires-python` 由 `>=3.9` 修正为 `>=3.10`；门槛 `269 passed`（`.venv` 重建为 3.11.9，且 venv 内不再有 pip） |
 
 ## §9.3 分段任务卡（迁移期原始记录，已过期）
 

@@ -20,6 +20,8 @@
 - **C3** 不复制官方 `build_filter_stack` 的装配逻辑
 - **C4** 不用「改官方 strip 让它保留换行」的魔改；**输出不得依赖输入空白**
 - **C5** pass 只允许改写 `Whitespace` token（不改 ttype、不重排、不删非空白 token）
+- **C6** 工具链唯一 **uv**（开发 `uv sync` / 构建 `uv build` / 部署 `uv tool install`）：**不回落 pip**、
+  不往 py 主解释器装；唯一声明例外是 `--with-deps` 的 `pip download`（登记见 `.claude/plan/status.md` §3.5）
 
 > 违反 C4 / C5 的方案**直接否掉**，哪怕它能让当前用例通过。理由与目标全文见 `.claude/plan/PLAN.md` §1。
 
@@ -32,6 +34,7 @@
 | **下一步开工点** / 各阶段卡（靶子·根因·证据·残留） | `.claude/plan/stages.md` §9 |
 | U1–U16 语义差异、规则总表、每处补偿的落点与**调用时序** | `.claude/plan/diffs.md` §3.4 / §4 |
 | 架构管线、代码地图、测试约定、默认参数、命令用法 | `README.md`「AI 指引」 |
+| **安装 / 构建 / 部署（uv tool）/ uv 源与 lock** | `README.md`「安装」「构建与发布」 |
 | 迁移期历史与变更记录（追溯用） | `.claude/plan/history.md` |
 | 长期口径决策、协作约定（多代理 / worktree） | `.codebuddy/memory/MEMORY.md` |
 | **诊断与改法**（元规则一~七、工作流、坑位） | 技能 `sqlfmt-parity`（`.codebuddy/skills/sqlfmt-parity/`）：`SKILL.md` + `references/` |

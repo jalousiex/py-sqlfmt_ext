@@ -23,9 +23,9 @@ except ModuleNotFoundError as _exc:
     if (_exc.name or "").split(".")[0] == "sqlparse":
         raise ModuleNotFoundError(
             "缺少依赖：sqlparse（本项目要求 >=0.6,<0.7）\n"
-            f'  安装依赖  ："{sys.executable}" -m pip install "sqlparse>=0.6,<0.7"\n'
-            f'  安装本项目："{sys.executable}" -m pip install .\n'
-            "  或用项目自带虚拟环境的解释器（<项目>/.venv/Scripts/python.exe）"
+            "  开发环境：在项目根跑 uv sync（工具链统一 uv，本项目不再走 pip）\n"
+            "  使用环境：uv tool install <wheel>（装进隔离 tool 环境，不动 py 主解释器）\n"
+            f"  当前解释器：{sys.executable}"
         ) from _exc
     raise
 

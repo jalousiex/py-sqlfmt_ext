@@ -2,15 +2,11 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "安装：可编辑到项目 .venv",
+			"label": "开发：uv sync（建/同步 .venv）",
 			"type": "process",
-			"command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+			"command": "uv",
 			"args": [
-				"-m",
-				"pip",
-				"install",
-				"-e",
-				"."
+				"sync"
 			],
 			"options": {
 				"cwd": "${workspaceFolder}"
@@ -32,17 +28,26 @@
 			"group": "build"
 		},
 		{
-			"label": "部署：装到主环境（脱开 venv）",
+			// 部署 = uv tool install（隔离 tool 环境），不再装 py 主解释器。
+			// ⚠️ 下面的 wheel 路径含版本号：pyproject.toml 升版本后要同步这里与 README「构建与发布」。
+			"label": "部署：uv tool install（隔离 tool 环境）",
 			"type": "process",
-			"command": "${config:sqlfmt.mainEnvPython}",
+			"command": "uv",
 			"args": [
-				"scripts/install_to_main.py"
+				"tool",
+				"install",
+				"--force",
+				"--reinstall",
+				"scripts/output/wheels/wheelhouse/sqlfmt_ext-0.1.0/sqlfmt_ext-0.1.0-py3-none-any.whl"
 			],
 			"options": {
 				"cwd": "${workspaceFolder}"
 			},
 			"problemMatcher": [],
-			"group": "build"
+			"group": "build",
+			"dependsOn": [
+				"构建：打 wheel"
+			]
 		},
 		{
 			"label": "测试：门禁 pytest",

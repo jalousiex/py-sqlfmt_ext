@@ -6,13 +6,20 @@
     python scripts/build_package.py --with-deps    # 连运行依赖一起打 ZIP（离线分发）
     python scripts/build_package.py 0.1.1          # 指定新版本号后再构建
 
-做法对齐隔壁 py-dataphin/scripts/build_package.py：
-    pip wheel <仓库根> --no-deps --wheel-dir <wheelhouse>
+构建工具链（E2 起统一为 **uv**，不再走 pip）：
+    uv build --wheel --out-dir <wheelhouse>
 产物落在 scripts/output/wheels/（已被 .gitignore 的 `output/` 覆盖，不入库）。
 
-与隔壁的差异：本项目唯一的运行依赖 sqlparse 是纯 Python（py3-none-any），
-所以**不传 --platform / --implementation / --abi 那组跨平台限定** ——
-那是为隔壁的 Linux 计算任务准备的，这里下载到的 wheel 在 Windows / Linux 通用。
+与参考项目 py-dolphin_scheduler 的差异：**不做 wheel 内容断言** —— 本项目只有单一顶层命名空间
+`sqlfmt_ext/`（由 `[tool.setuptools.packages.find]` 限定），不存在「运行期数据混进包里」的历史问题。
+
+> **`uv` 必须在 PATH 上**。缺它直接报错给指引，**不回落 pip** —— 回落会让「构建到底用哪套工具」
+> 变成看环境而定，产物也就说不清是哪个工具链出的。
+>
+> **`--with-deps` 是全项目唯一保留的 pip 用法**（声明例外）：uv 的 `pip` 子命令没有 `download`，
+> 而离线 ZIP 要的是「只取 wheel、不安装」，uv 无等价能力（其 `install --target` 是解包安装）。
+> 登记在 `.claude/plan/status.md` §3.5；唯一的运行依赖 sqlparse 是纯 Python（py3-none-any），
+> 所以**不传 --platform / --implementation / --abi 那组跨平台限定**，拉到的 wheel 在 Windows / Linux 通用。
 """
 
 import argparse
@@ -32,6 +39,41 @@ PYPROJECT = ROOT / "pyproject.toml"
 def _run(cmd, cwd):
     print("  $ {}".format(" ".join(map(str, cmd))))
     subprocess.check_call(cmd, cwd=cwd)
+
+
+def _require_uv():
+    """取 uv 可执行文件路径；不在 PATH 上就报错给指引（**不回落 pip**，理由见模块 docstring）。"""
+    uv = shutil.which("uv")
+    if uv is None:
+        raise SystemExit(
+            "未找到 uv：本项目自 E2 起以 uv 为唯一工具链，不回落 pip。\n"
+            "  安装：winget install --id astral-sh.uv\n"
+            "  装好后确认 `uv --version` 可用，再重跑本脚本。"
+        )
+    return uv
+
+
+def _download_deps(wheelhouse_dir, main_wheel):
+    """把主包依赖的 wheel 拉进 wheelhouse（**本脚本唯一保留 pip 的步骤**，声明例外）。
+
+    为什么还用 pip：uv 的 ``pip`` 子命令只有 compile / sync / install / uninstall / freeze /
+    list / show / tree / check，**没有 ``download``**；离线 ZIP 要的是「只取 wheel、不安装」，
+    uv 无等价能力（``install --target`` 是解包安装，不是 wheel 包）。
+    这是**声明例外**，登记在 ``.claude/plan/status.md`` §3.5；改造前先看那条。
+    """
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "download",
+            "--only-binary=:all:",
+            "--dest",
+            str(wheelhouse_dir),
+            str(main_wheel),
+        ],
+        cwd=ROOT,
+    )
 
 
 def _read_pyproject(pattern):
@@ -70,17 +112,15 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     name = _read_pyproject(r'^name\s*=\s*"([^"]+)"')
+    uv = _require_uv()
     version = _bump_version(args.version)
     wheelhouse_dir = OUTPUT_DIR / "wheelhouse" / f"{name}-{version}"
 
     try:
         wheelhouse_dir.mkdir(parents=True, exist_ok=True)
 
-        # 1. 主包 wheel（--no-deps：依赖单独处理）
-        _run(
-            [sys.executable, "-m", "pip", "wheel", ROOT, "--no-deps", "--wheel-dir", wheelhouse_dir],
-            cwd=ROOT,
-        )
+        # 1. 主包 wheel（构建工具链 = uv；依赖由 --with-deps 单独处理）
+        _run([uv, "build", "--wheel", "--out-dir", str(wheelhouse_dir)], cwd=ROOT)
 
         # 2. 收集主包 wheel（wheel 文件名里的 `-` 会被归一化成 `_`）
         wheel_prefix = name.replace("-", "_") + "-"
@@ -94,21 +134,9 @@ def main(argv=None):
         main_wheel = main_wheels[0]
         print(f"\n主包 wheel: {wheelhouse_dir / main_wheel}")
 
-        # 3. 可选：拉依赖并打离线 ZIP（依赖为纯 Python，跨平台通用）
+        # 3. 可选：拉依赖并打离线 ZIP（依赖为纯 Python，跨平台通用；pip 为声明例外）
         if args.with_deps:
-            _run(
-                [
-                    sys.executable,
-                    "-m",
-                    "pip",
-                    "download",
-                    "--only-binary=:all:",
-                    "--dest",
-                    wheelhouse_dir,
-                    wheelhouse_dir / main_wheel,
-                ],
-                cwd=ROOT,
-            )
+            _download_deps(wheelhouse_dir, wheelhouse_dir / main_wheel)
             zip_path = OUTPUT_DIR / f"{name}-{version}-py3-none-any.zip"
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
                 for path in sorted(wheelhouse_dir.iterdir()):

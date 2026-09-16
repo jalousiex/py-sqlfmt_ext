@@ -10,16 +10,18 @@
 
 ## §9 断点卡
 
-> 落盘时间：2026-09-13（S16 收工刷新）。
-> **S1–S7、S9、S10、S10-b、S8-a~d、S11–S16 全部完成**，门槛与 `KNOWN_DIVERGENT` 现状见 `status.md §3`。
+> 落盘时间：2026-09-16（E2 收工刷新）。
+> **S1–S7、S9、S10、S10-b、S8-a~d、S11–S16、E1、E2 全部完成**，门槛与 `KNOWN_DIVERGENT` 现状见 `status.md §3`。
 
 **方言优先级（用户口径，2026-09-13 定）**：**Doris / SelectDB 最优先 → 其次 MySQL →
 Oracle / SQL Server 暂缓不做**。S8-a~d 至此全部收：Doris/SelectDB 与 MySQL 已适配；
 SQL Server（S8-c）已完成并保留（不回退、也不再往前推）；Oracle 未开工。
 
-**下一步开工点**：方言路线已走完，S11–S16 已收。**当前无「必须做」的缺口**，
-剩下的都是**登记在案的已知边界**（都不影响现有 fixture，各自需先开新阶段卡再动手），
-清单见 `status.md §3.5`；写卡前请先做下面这条巡检。
+**下一步开工点（2026-09-16，E2 收工刷新）**：**无** —— E2（工具链切 uv + 部署形态改 `uv tool install`）已收，
+卡见本文件 §9.20；方言路线（Doris/SelectDB → MySQL，SQL Server 保留）也早已走完。
+
+**当前无「必须做」的缺口**：剩下的都是**登记在案的已知边界 / 事实**（都不影响现有 fixture，各自需先开
+新阶段卡再动手），清单见 `status.md §3.5`（其中第 9–12 条是 E2 登记的 uv 类事实）；写卡前请先做下面这条巡检。
 
 **巡检结论（2026-09-13，S16 期间做的一轮）**：拿一段真实风格的 Doris 建表 + CTE/窗口/`case`/`having`
 查询跑过，输出与既有 fixture 口径**逐项一致**，没有发现新缺口。两处「看着不齐」的形态是**既定口径**，
@@ -423,3 +425,98 @@ DDL/INSERT 字段列表分支改用后者（并顺手把「找不到逗号后仍
 迁移期探针已随旧 fork 全部删除，`.gitignore` 仍忽略 `_tmp_*` → **诊断脚本一律现场写、用完即删**。
 诊断手法（元规则一~七、工作流、坑位）见技能 `sqlfmt-parity`；探针坑位与「直接读树」的写法见
 `history.md §9.4`。
+
+---
+
+## §9.20 E2 工具链切 uv + 部署形态改 `uv tool install` 已收（2026-09-16）
+
+**用户原话**：「参考 `C:\_OneDrive\_cloud\5-Project\python\py-dolphin_scheduler\` 的做法，将项目改为 uv 管理，
+**不兼容历史**，**不再往 py 主解释器安装**，统一使用 **`uv tool install`** 安装（即本机开发之外也按发布部署形态，
+由其它场景调用）」。按本轮问答选定：部署 = **文档一行命令 + VSCode 任务**（`install_to_main.py` 删除）、
+tool 解释器**交给 uv 自选**（工作区已 pin `.python-version`）、`--with-deps` 的 pip 用法**保留并登记为声明例外**。
+
+**靶子（四件）**：
+
+① **工具链是 pip 口径**：开发依赖在 `requirements-dev.txt`（`pip install -e .`）、构建走 `pip wheel`、
+部署走 `scripts/install_to_main.py` 的 `pip install --force-reinstall` → 与「uv 唯一工具链」的要求相反。
+② **部署形态是「往主解释器装」**：E1 的双环境模型把 wheel 装进 `pythoncore-3.14-64`（日常使用与 DBeaver 都指向它），
+与「不往全局解释器装包」的环境纪律冲突，也让「本机跑的是哪份代码」依赖某个解释器的状态。
+③ **仓库里没有 `uv.lock`**：依赖解析结果不可复现；仓库根的 `.python-version`（3.11）**未跟踪**，
+换机器时 uv 选哪个解释器不确定。
+④ **dolphin 的 S23 留了一个待验证前提**：其阶段卡明确写着「uv 工具链约定」要**等 `py-sqlfmt_ext` 按同一约定
+改造完**再抽成跨项目公共能力 —— 本次正是该提案的验证时机（形态只能是**约定 + 事实清单**，不做成公共包）。
+
+**根因**：
+
+① pip 与 uv 的能力边界不同却混用 —— pip 的 `--force-reinstall` 以**整环境**为粒度（没有「只重装主包」的选项），
+「同版本重新部署」必然连带重解析依赖；uv 以**包**为粒度，且原生提供 `tool` 环境（「一个命令 + 独立环境」）。
+② 「装主解释器」这套形态的价值来自 pip 的记忆负担（找解释器 / `--find-links` / `--force-reinstall` / 手工自检），
+这部分负担 `uv tool install` 原生不存在，于是 `install_to_main.py`（153 行胶水）变成多余的一层。
+③ 本阶段是**环境与工程链路**改造，与格式化口径（C1–C5）正交 —— 门槛数字必须与 E1/S16 相同（见 A1），
+`sqlfmt_ext/` 与 `tests/` **零改动**。
+
+**改动**（边界，宁少不多）：
+
+| 类别 | 文件 | 动作 |
+|---|---|---|
+| 依赖 | `pyproject.toml` | 加 `[dependency-groups] dev`（替代 `requirements-dev.txt`）；其余段不动 |
+| 依赖 | `requirements-dev.txt` | **删除**（**不留 pip 退路**） |
+| 依赖 | `uv.lock` · `.python-version` | **新增并入库**（依赖锁定可复现 + 解释器基线） |
+| 构建 | `scripts/build_package.py` | `pip wheel` → `uv build --wheel --out-dir`；加 `_require_uv()`（缺 uv 报错给指引，**不回落 pip**）；`--with-deps` 保留 `python -m pip download` 并注明为**声明例外** |
+| 部署 | `scripts/install_to_main.py` | **删除**（部署改 `uv tool install`） |
+| 文案 | `sqlfmt_ext/__init__.py` · `conftest.py` | 仅把「依赖缺失提示 / 守卫措辞」改成 uv 口径，逻辑不动 |
+| IDE | `.vscode/tasks.json` · `settings.json` | 四任务改 uv（同步 / 构建 / 部署 / 门禁）；删 `sqlfmt.mainEnvPython` |
+| 文档 | `README.md` · `AGENTS.md` | 安装 / 使用（含 DBeaver 路径）/ 测试 / 构建与发布 / uv 源与 lock；硬约束新增 **C6** |
+| 计划 | `status.md` · `PLAN.md` · `history.md` · 本文件 | 锚点 + 状态表 + 门禁 + 已知边界；风险表；变更记录 |
+
+**验收锚点（E2，期望值）**：
+
+| # | 判据 | 期望 |
+|---|---|---|
+| A1 | `.venv\Scripts\python.exe -m pytest -q` | **269 passed**（0 failed / 0 xfailed），与 E1/S16 相同 |
+| A2 | `uv lock --check` | 退出码 **0** |
+| A3 | `uv sync --frozen` | 无变更（不静默改环境） |
+| A4 | pip 残留扫描（排除 `.claude/plan/` 历史记录） | 只剩**声明例外**：`build_package.py` 的 `pip download` 与其文档说明 |
+| A5 | `uv tool list` / exe 落点 | 含 `sqlfmt_ext v0.1.0`；`%USERPROFILE%\.local\bin\sqlfmt_ext.exe` 存在 |
+| A6 | **在项目目录之外**调用该 exe | 输出与门禁 fixture 一致（cwd 在仓库内会命中源码 → 假绿，不算证据） |
+| A7 | 主解释器 `pythoncore-3.14-64` | 已**无** `sqlfmt_ext`（不再往主解释器装） |
+| A8 | 仓库内 pip 形态残留 | `requirements-dev.txt` / `scripts/install_to_main.py` 已不存在；`sqlfmt.mainEnvPython` 已移除 |
+
+**实测结果**：**A1–A8 全部满足**（逐条证据见下表 #4 / #5 / #6 / #7 / #9 / #10 / #11）。
+另**额外达成**：`uv lock --check` 与 `uv sync --frozen` 均无变更；残留扫描把「例外登记指向」也一并补齐。
+
+**回退方式**：整体一次 `git revert`（含恢复 `install_to_main.py` / `requirements-dev.txt` / README / VSCode 任务）；
+旧 `.venv`（3.14.3）**改名保留**为 `.venv.bak-3.14`（可逆，非删除）；tool 环境退场 = `uv tool uninstall sqlfmt_ext`；
+主解释器卸载的恢复 = 用旧 wheel 重装（`uv pip install --python <主解释器> <旧 wheel>`）。
+
+**证据（实测）**：
+
+| # | 场景 | 结果 |
+|---|---|---|
+| 1 | `uv --version` / `uv tool list`（改造前） | `uv 0.12.14`；`No tools installed`；用户级 `%APPDATA%\uv\uv.toml` 已存在 |
+| 2 | `uv lock`（首次） | **暴露 `requires-python` 声明缺陷**：`No solution found … (markers: python_full_version == '3.9.*')`；实测依赖元数据 `sqlparse-0.6.0.dist-info/METADATA` → `Requires-Python: >=3.10` → 改成 `>=3.10` 后 `Resolved 11 packages` |
+| 3 | `uv sync` | `.venv` 重建为 **3.11.9**（`pyvenv.cfg`：`home=…pythoncore-3.11-64`、`uv = 0.12.14`、**无 `Scripts\pip.exe`**）；`sqlfmt-ext==0.1.0` 可编辑装源码；`sqlparse` 来自 `.venv` 的 site-packages |
+| 4 | **A1** 门槛 | `.venv\Scripts\python.exe -m pytest -q` → **269 passed**（0 failed / 0 xfailed） |
+| 5 | **A2 / A3** | `uv lock --check` 退出码 0（`Resolved 11 packages`）；`uv sync --frozen` → `Checked 8 packages`（无变更） |
+| 6 | **A8** 构建 | `python scripts\build_package.py` → 内部 `uv build --wheel --out-dir …` 出 `sqlfmt_ext-0.1.0-py3-none-any.whl`；包内只含 `sqlfmt_ext/**` + dist-info（无 egg-info / pyc）；`finally` 清理后仓库根无 `build/` `dist/` `*.egg-info` |
+| 7 | **A5** 部署 | `uv tool install --force --reinstall <wheel>` → `Installed 1 executable: sqlfmt_ext`；`uv tool list` = `sqlfmt-ext v0.1.0`；`%USERPROFILE%\.local\bin\sqlfmt_ext.exe` 存在；tool 环境在 `%APPDATA%\uv\tools\sqlfmt-ext`（其 `pyvenv.cfg` → **3.14.3**） |
+| 8 | 同版本重装语义（决定 README 写法） | `uv tool install <wheel>`（**不带 flag**）→ 只 `Checked 2 packages` + 重写可执行文件，**不重装包** ⇒ 同版本重新部署**必须带 `--reinstall`**（README 与 VSCode 任务据此写） |
+| 9 | **A6** 项目目录之外自检 | cwd = `%TEMP%`，exe 输出与 `tests/fixtures/cases/ddl/sqltest0_s07.sql` **逐字符一致** |
+| 10 | **A7** 主解释器 | `uv pip list --python <主>` 无 `sqlfmt` / `sqlparse`；`…pythoncore-3.14-64\Scripts\sqlfmt_ext.exe` 不存在；项目目录外 `find_spec('sqlfmt_ext')` → `None` ⇒ **主解释器本来就没装过本项目**，无需卸载（原计划的破坏性动作变成空操作） |
+| 11 | **A4** 残留扫描（全仓，只读子代理） | 入库现行文件**无**机器 / 个人专属路径；pip 用法只剩声明例外；**修掉 2 处漏网**（`python -m pip install uv` 指引、`pyproject.toml` 注释里的已删文件名）+ **1 处悬空指向**（多处写「登记在 `status.md` §3.5」而该条目当时不存在 → 已补 §3.5 第 9–12 条） |
+| 12 | `uv python find` 两处差异（解释 tool 环境为何是 3.14） | 项目内 → `.venv\Scripts\python.exe`；项目外 → `pythoncore-3.14-64` ⇒ `uv tool install` 用**默认发现**的解释器，**不读 `.python-version`**（登记为 `status.md` §3.5 第 9 条） |
+
+**残留 / 下一步**：
+
+- **旧 `.venv`（3.14.3）未删，改名保留为 `.venv.bak-3.14`**（可逆；已忽略，不入库）。新版开发环境已验证
+  可用（证据 3/4），确认无问题后**由你删除**该目录即可 —— `uv sync` 能凭 `uv.lock` 重建。
+- **DBeaver 的程序路径需你手工改**为 `%USERPROFILE%\.local\bin\sqlfmt_ext.exe`（README 表已更新为新路径；
+  旧路径 `…pythoncore-3.14-64\Scripts\sqlfmt_ext.exe` 实测**并不存在**，即原有配置本身未落地）。
+- **VSCode「部署」任务与 README 各写一处 wheel 版本号** —— 升版本（`build_package.py 0.1.1`）后要同步这两处；
+  这是选定的「文档一行命令 + 任务」形态的**已知维护点**（不改产物目录布局、不加脚本，理由见计划卡）。
+- **dev(3.11.9) 与 tool(3.14.3) 解释器不同**：`uv tool install` 不读 `.python-version`（§3.5 第 9 条）。
+  要让二者一致就加 `--python`；本次按用户口径「交给 uv 自选」**不加**。
+- **`--with-deps` 仍用 `python -m pip download`**：全项目唯一保留的 pip 用法（§3.5 第 10 条），别顺手「统一」掉。
+- **仓库根游离文件 `主动修改列表,其它为格式差异.txt`** 含机器路径与旧仓库名（`C:\_Dev\python\venv-vsc\…`、
+  `py-sqlfmt`）：**本阶段未引入**，按「既有文件只提示不删」处理 —— 是否入库由你定。
+- 本阶段**没有**动 `sqlfmt_ext/` 与 `tests/` 任何一行（C1–C5 继续成立），门槛数字与 E1/S16 相同。

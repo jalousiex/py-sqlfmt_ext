@@ -7,7 +7,10 @@ name = "sqlfmt_ext"
 version = "0.1.0"
 description = "基于官方 sqlparse 的 SQL 格式化外挂层（Doris/SelectDB 优先）"
 readme = "README.md"
-requires-python = ">=3.9"
+# 下限由运行依赖决定：sqlparse 0.6.0 的 Requires-Python 是 >=3.10（实测 wheel 元数据）。
+# 原写 >=3.9 是**错误声明** —— pip 只按当前解释器解析，永远碰不到这个矛盾；
+# uv 做跨版本（universal）解析时立刻暴露（`uv lock` 报 No solution found for 3.9.*）。
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
 ]
@@ -15,6 +18,12 @@ dependencies = ["sqlparse>=0.6,<0.7"]
 
 [project.scripts]
 sqlfmt_ext = "sqlfmt_ext.cli:main"
+
+[dependency-groups]
+# 开发依赖（E2 起由本组承载；工具链统一走 uv，不回落 pip）：
+# `uv sync` 默认安装本组。这里只声明下限，**实际解析版本由入库的 uv.lock 钉住** ——
+# 写死上限会与 lock 打架，且本项目对 pytest 版本无口径要求。
+dev = ["pytest>=7"]
 
 [tool.setuptools.packages.find]
 include = ["sqlfmt_ext*"]
