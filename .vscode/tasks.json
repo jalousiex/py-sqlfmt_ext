@@ -17,8 +17,10 @@
 		{
 			"label": "构建：打 wheel",
 			"type": "process",
-			"command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+			"command": "uv",
 			"args": [
+				"run",
+				"python",
 				"scripts/build_package.py"
 			],
 			"options": {
@@ -52,9 +54,9 @@
 		{
 			"label": "测试：门禁 pytest",
 			"type": "process",
-			"command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+			"command": "uv",
 			"args": [
-				"-m",
+				"run",
 				"pytest",
 				"-q"
 			],

@@ -1,222 +1,165 @@
 # sqlfmt_ext
 
-基于官方 `sqlparse` 的 SQL 格式化工具：**不改官方源码**，把团队口径做成一层外挂补偿
-（`sqlfmt_ext/`），固化默认参数，并用回归 / 收敛 / 幂等三类用例钉住输出稳定。
-
-方言优先级：**Doris / SelectDB 最优先 → 其次 MySQL → Oracle / SQL Server 暂缓**。
-`dialect="doris"`（默认）/ `"selectdb"` 已适配 Doris 建表模型定义词与类型名；
-`dialect="mysql"` 已适配建表类型名、表选项换行、`ON DUPLICATE KEY UPDATE`；
-SQL Server（`dialect="sqlserver"`）已适配 `GO` 批分隔符、`TOP`、`WITH(NOLOCK)`，但按优先级暂不再推进。
-
-## 安装
-
-**工具链统一用 uv**（本项目自 E2 起不再走 pip）；开发环境与使用环境分开，互不干扰：
-
-```powershell
-# 开发环境（本仓库内）：建 / 同步 .venv —— 可编辑安装，改代码即时生效
-uv sync
-
-# 需要「检出即复现」时用（lock 与本地不一致会直接报错，不静默改环境）
-uv sync --frozen
-```
-
-运行依赖 `sqlparse>=0.6,<0.7` 见 `pyproject.toml`，**实际解析版本记在 `uv.lock`**（已入库）；
-开发依赖（pytest）在 `pyproject.toml` 的 `[dependency-groups] dev`。
-解释器版本由仓库根 **`.python-version`**（3.11）决定 —— 开发环境与门禁都用它。
-
-**使用环境不是装进 py 主解释器**：日常使用（含 DBeaver 等外部调用）走 **`uv tool install`**，
-装到 uv 的**隔离 tool 环境**，命令落在 `%USERPROFILE%\.local\bin\sqlfmt_ext.exe` —— 见「构建与发布」。
-
-> **uv 不读 pip 的配置文件**（本机 pip 里配的内网源对它无效）—— 源的配置方式见「构建与发布」里的
-> 「uv 的包索引」小节。
-
-## 使用
-
-```powershell
-# 无参数：打印用法（选项一览）
-sqlfmt_ext
-
-# 格式化单文件（输出到 stdout）
-sqlfmt_ext path/to/file.sql
-
-# 递归格式化目录
-sqlfmt_ext path/to/sql-dir
-
-# 原地回写
-sqlfmt_ext path/to/file.sql --in-place
-
-# 不依赖 PATH 的等价写法（与上面同一个 main，三种写法等价）
-python -m sqlfmt_ext path/to/file.sql
-python -m sqlfmt_ext.cli path/to/file.sql
-
-# 库内调用
-python -c "from sqlfmt_ext import format_statements; print(format_statements('select 1'))"
-```
-
-> 三种写法**不分环境**：`sqlfmt_ext` 命令来自 `uv tool install` 的隔离环境（使用形态），
-> `python -m …` 用的是当前解释器（开发环境 `.venv`，或 tool 环境自己的解释器）。
-
-### DBeaver 外部格式化程序
-
-| 栏 | 填 |
-|------|------|
-| 程序 | `%USERPROFILE%\.local\bin\sqlfmt_ext.exe` |
-| 参数 | `${file}` |
-
-也可用解释器 + 参数 `-m sqlfmt_ext.cli ${file}`（不依赖 PATH 与 exe 落点）——
-tool 环境的解释器在 `uv tool dir` 下的 `sqlfmt-ext\Scripts\python.exe`。
-结果走 stdout、由 DBeaver 回填编辑器，**不要加 `--in-place`**。
-
-## 测试
-
-```powershell
-.venv\Scripts\python.exe -m pytest -q
-```
-
-覆盖：用例完整性、格式化输出回归（fixture 即期望）、收敛性（压平输入空白后输出不变）、
-幂等性（二次格式化不变）、方言开关，另加选项行为（`comma_first` / `align_list`）与布局变体的定向用例。
-**当前门槛数字与阶段状态见 `.claude/plan/status.md`**（本项目门槛数字的唯一真身）。
-
-## 构建与发布
-
-```powershell
-# 打主包 wheel（脚本内部走 `uv build`）→ scripts/output/wheels/wheelhouse/<名>-<版本>/
-python scripts\build_package.py
-
-# 指定新版本号（同时改写 pyproject.toml 的 version）
-python scripts\build_package.py 0.1.1
-
-# 连依赖一起打成离线 ZIP（内网 / 无源环境分发）
-python scripts\build_package.py --with-deps
-```
-
-**部署 = `uv tool install`（装进隔离 tool 环境，不动 py 主解释器）**：
-
-```powershell
-# 命令落在 %USERPROFILE%\.local\bin\sqlfmt_ext.exe
-# 同版本重新部署**必须带 --reinstall** —— 不加时 uv 只做 Checked、不重装（实测）
-uv tool install --force --reinstall "scripts\output\wheels\wheelhouse\sqlfmt_ext-0.1.0\sqlfmt_ext-0.1.0-py3-none-any.whl"
-
-# 查看 / 卸载
-uv tool list
-uv tool uninstall sqlfmt_ext
-```
-
-> 版本号变了要同步两处：上面这行命令（README）与 `.vscode/tasks.json` 的「部署」任务。
-
-**部署后自检必须在项目目录之外跑** —— cwd 在仓库内时源码会被塞进 `sys.path`，命中的是仓库源码
-而不是安装副本，结果不可信：
-
-```powershell
-cd $env:TEMP
-& "$env:USERPROFILE\.local\bin\sqlfmt_ext.exe" "<仓库>\tests\fixtures\cases\ddl\sqltest0_s07.input.sql"   # 输出应与同名 .sql 一致
-```
-
-VSCode 任务：`开发：uv sync` / `构建：打 wheel` / `部署：uv tool install（隔离 tool 环境）` / `测试：门禁 pytest`。
-部署任务用 `"type": "process"` 直接调 `uv`（不经 shell、不走 PATH）。
-
-**uv 的包索引（换机器必看）**：uv **不读 pip 的配置文件**，本机 pip 里配的内网源对它无效。
-本组织做法是写**用户级** `%APPDATA%\uv\uv.toml`：
-
-```toml
-index-url = "https://<内网源主机>/repository/pypi-proxy/simple"
-```
-
-换机器 / 换源三选一：① 照上面写用户级 `uv.toml`；② 设 `$env:UV_INDEX_URL='<源地址>'`；
-③ 单次命令加 `--index-url <源地址>`。
-
-> ⚠️ **`uv.lock` 会记录解析时用的源地址** —— 换源后必须重跑 `uv lock`，
-> 否则 `uv lock --check` 与 `uv sync --frozen` 会判定与本地不一致。
-
-**唯一保留的 pip 用法**：`--with-deps` 的 `python -m pip download` —— uv 的 `pip` 子命令**没有 `download`**，
-而离线 ZIP 要的是「只取 wheel、不安装」（`uv pip install --target` 是解包安装），无 uv 等价物。
-该例外登记在 `.claude/plan/status.md` §3.5，别顺手「统一」掉。
-
-发布到源（预留，尚未执行）：拿到 wheel 后上传到目标源 —— 官方源可 `python -m twine upload dist/*.whl`，
-内网源则把 wheel（连同 `--with-deps` 拉到的依赖）放进源目录。
-
-## 目录
-
-| 路径 | 说明 |
-|------|------|
-| `sqlfmt_ext/cli.py` | CLI 入口（`sqlfmt_ext` 命令与 `python -m sqlfmt_ext.cli` 共用同一份 main） |
-| `sqlfmt_ext/` | 补偿层：官方 filter 的替换/追加 + 本项目 pass（分组、布局、对齐、分词兜底） |
-| `scripts/build_package.py` | 构建：`uv build` 出 wheel（可选 `--with-deps` 打离线 ZIP，见「构建与发布」） |
-| `tests/` | pytest 测试与 SQL 夹具（`tests/fixtures/cases/<topic>/*.sql`） |
-| `uv.lock` | **依赖锁定**（已入库）：`uv sync` 据它装环境；换源后需重跑 `uv lock` |
-| `.python-version` | 解释器基线（开发环境用）—— `uv sync` / 门禁的解释器版本 |
-| `.claude/rules/` | 阶段推进协议（开工四步 / 阶段内铁律 / 收工六步 / 汇报格式） |
-| `.claude/plan/` | **计划真身**：大纲 / 状态 / 阶段卡 / 差异 / 归档（见下表） |
-
-### 计划文件（`.claude/plan/`）
-
-| 文件 | 内容 |
-|---|---|
-| `PLAN.md` | 目标 / 非目标 / 硬约束 §1、架构 §2、测试策略 §6、风险与回退 §7 |
-| `status.md` | 阶段状态与门槛 §3（**门槛数字唯一真身**）、门禁清单、已知边界 |
-| `stages.md` | **断点卡**（下一步开工点）+ 各阶段卡 §9.x |
-| `diffs.md` | 上游语义差异 U1–U16 §3.4、布局/对齐规则表 §4、补偿落点与时序 |
-| `history.md` | 归档：迁移期（S0–S7）记录与变更记录 |
-
-章号沿用原 `PLAN.md`，因此代码注释里的 `PLAN §9.x` 等引用仍可按章号导航。
+`sqlfmt_ext` 是一个基于官方 `sqlparse` 的 SQL 格式化工具。它以**无侵入**的外挂方式扩展了官方功能，固化了符合团队习惯的美化与缩进规则，并原生支持 **Doris / SelectDB** 等现代数据仓库 SQL 方言。
 
 ---
 
-## AI 指引
+## ✨ 核心特性
 
-> 常驻指令（硬约束 + 阶段推进协议 + 懒加载索引）在根 `AGENTS.md`；
-> 「怎么诊断、怎么改」的手法在技能 `sqlfmt-parity`。本节的定位是**架构与约定**。
+- 🎯 **无侵入扩展**：不修改、不复制 `sqlparse` 源码，在保持语义与词法安全的前提下实现精致排版。
+- 🚀 **现代方言支持**：
+  - **Doris / SelectDB**（默认）：支持建表模型定义（如 `DUPLICATE KEY`、`DISTRIBUTED BY`）、数据类型及计算语法。
+  - **MySQL**：适配建表类型名、表选项换行与 `ON DUPLICATE KEY UPDATE` 子句。
+  - **SQL Server**：支持 `GO` 批分隔符、`TOP` 及 `WITH(NOLOCK)`。
+- 📐 **精细化对齐**：支持 SELECT 表达式 AS 别名列对齐、括号内字段列表智能展开与缩进。
+- 🔒 **收敛与幂等**：内置严苛的测试用例，确保多次格式化结果完全一致（幂等性）且不依赖输入空白。
 
-### 架构概要
+---
 
-```text
-sqlfmt_ext.cli → sqlfmt_ext.format_statements()
-  → 方言批切分（仅当 batch_separator 非空，如 sqlserver 的 GO）
-  → 官方 lexer.tokenize()        # 正则分词（DialectLexer 追加方言词表 / 优先级规则）
-  → 官方 StatementSplitter       # 按 ; 分割语句
-  → sqlfmt_ext.grouping.group()  # 官方分组 + 本项目补偿（11 处，见 .claude/plan/diffs.md §4.4）
-  → sqlfmt_ext.passes.layout     # 核心：深度优先遍历，关键字前换行 + 缩进
-  → sqlfmt_ext.passes.align      # 列表 AS / 别名列对齐
-  → 官方 SerializerUnicode
+## 📦 安装与部署
+
+本项目统一使用现代 Python 包管理工具 [uv](https://github.com/astral-sh/uv) 进行环境与部署管理。
+
+### 1. 作为全局 CLI 工具安装（推荐）
+
+打包出 wheel 后安装到全局隔离环境，命令行随时可用：
+
+```powershell
+# 安装到全局隔离 tool 环境
+uv tool install .
+
+# 构建打包
+uv run python scripts/build_package.py
+
+# 分发whl后安装
+uv tool install --force --reinstall "scripts/output/wheels/wheelhouse/sqlfmt_ext-0.1.0/sqlfmt_ext-0.1.0-py3-none-any.whl"
 ```
 
-**硬约束**：不修改官方 `sqlparse` 源码（用替换 filter / 追加 pass / 事后补偿实现），
-不靠删除或改写非空白 token、不靠重排 token 来对齐。全文见 `.claude/plan/PLAN.md` §1。
+安装完成后，命令行可以直接调用 `sqlfmt_ext`（自动写入用户 PATH 环境变量）。
 
-### 关键文件
+### 2. 作为项目本地开发环境
 
-- `sqlfmt_ext/cli.py` — CLI 入口；`format_statements()` 拆分语句后逐条格式化，`.strip()` 后用 `\n\n` 拼接
-- `sqlfmt_ext/passes/layout.py` — 核心布局：`_process()` **按组类名分发**（`_process_{cls}`），
-  所以任何「把括号包进别的组」的补偿都会改变这里收到的组
-- `sqlfmt_ext/passes/align.py` — 列对齐（`_identifier_layouts` / `_create_field_lines`）
-- `sqlfmt_ext/grouping.py` — 官方 `grouping` 前/后的补偿（`_wrap_create_table_calls` /
-  `_attach_over_to_functions` / `_extend_adjacent_lists` / `_trim_clause_tail` 等，
-  每处 docstring 都写明「为什么需要」与「为什么放这个位置」）
-- `sqlfmt_ext/lexer.py` · `sqlfmt_ext/stack.py` — `DialectLexer`；复用官方 `build_filter_stack` 后**换装 / 摘除** filter
-- `sqlfmt_ext/filters/` — 替换官方的空白 / 操作符 filter
-- `sqlfmt_ext/policy.py` — **通用**关键字与多词关键字口径（`LATERAL VIEW`、`OVER(` 的优先级补丁等）
-- `sqlfmt_ext/dialects.py` — **方言的唯一真身**：`Dialect(name, multiword_patches,
-  precedence_patches, extra_lexer_rules, extra_keywords, extra_split_words, type_name_keywords,
-  batch_separator, notes)`。
-  分词层（方言关键字与**类型名**、方言专属优先级规则）、布局层（`DISTRIBUTED BY` 等换行锚点）、
-  批切分层（SQL Server 的 `GO`）都从这里取声明；未知方言由 `options` 直接报错（不再静默降级）
-- `sqlfmt_ext/options.py` — 默认参数与校验（扩展项 `align_list` / `dialect`）
+在克隆仓库后，一键建环境并同步依赖：
 
-### 测试约定
+```powershell
+# 初始化并同步本地 3.11 开发环境（.venv）
+uv sync
 
-- `tests/fixtures/cases/` 下的 `.sql` 文件**即期望输出**（同时作为输入，除非同目录存在
-  `<name>.input.sql`）；新增用例只需加 `.sql` 文件，无需改测试代码
-- 新 topic 在 `tests/fixtures/sql_cases.py` 的 `TOPIC_META` 注册；需要非默认选项的用例在
-  同文件的 `FILE_OPTIONS` 里按文件名映射
-- 按标签筛选用例：`SQLFMT_CASE_TAGS=comma python -m pytest -v`
-- 收敛 / 幂等门禁里的 `KNOWN_DIVERGENT` 每项都必须写清原因；修好一项就删一项
-  （`xfail(strict=True)` 会在修好时主动报错提示）
-- 仓库根 `conftest.py` 会校验 `sqlparse.__file__` 来自 site-packages —— 防止「仓库内 vendored 包
-  遮蔽官方包」的老问题复发
+# 检出即复现（要求与 uv.lock 严格一致）
+uv sync --frozen
 
-### 默认格式化参数
+# 在其它项目中安装源码联动版本
+uv tool install --editable ./path-to-project
+```
 
-`keyword_case=lower`、`indent_width=4`、`reindent_aligned=True`、`wrap_after=30`、
-`use_space_around_operators=True`、`align_list=True`（扩展项）、`dialect="doris"`（扩展项）
+---
 
-低频参数**不做 CLI 参数**，优先改 `sqlfmt_ext/options.py` 的模块级默认值。
+## 💡 使用指南
+
+### 命令行 (CLI)
+
+在全局安装后可直接使用 `sqlfmt_ext`，在开发仓库内可以通过 `uv run` 调度：
+
+```powershell
+# 查看帮助与参数选项
+sqlfmt_ext --help
+
+# 格式化单文件（结果输出到 stdout）
+sqlfmt_ext path/to/file.sql
+
+# 格式化目录下所有 SQL 文件
+sqlfmt_ext path/to/sql-dir/
+
+# 原地回写（直接覆盖原文件）
+sqlfmt_ext path/to/file.sql --in-place
+
+# 开发环境下指定方言与关键字大小写格式化
+uv run python -m sqlfmt_ext.cli path/to/file.sql -k upper
+```
+
+#### 常用 CLI 参数
+
+| 参数 | 说明 | 示例 / 可选值 |
+|---|---|---|
+| `--in-place` | 原地覆盖更新文件 | 标志位（直接修改文件） |
+| `-k`, `--keywords` | 关键字大小写 | `lower` (默认), `upper`, `capitalize` |
+| `-i`, `--identifiers` | 标识符大小写 | `lower`, `upper`, `capitalize` |
+| `--indent_width` | 缩进空格数 | 数字，默认 `4` |
+| `-a`, `--reindent_aligned` | 语句与列自动对齐 | 标志位 |
+| `--comma_first` | 逗号前置风格 | 标志位 |
+| `--align_list` | 列表与别名列对齐 | 标志位（默认开启） |
+
+### Python API
+
+可以在 Python 代码中作为第三方库调用：
+
+```python
+from sqlfmt_ext import format_statements
+
+sql = "select id, name, count(1) as total from user_tb where status = 1 group by id, name"
+formatted = format_statements(sql, options={"dialect": "doris", "keyword_case": "upper"})
+print(formatted)
+```
+
+---
+
+## 🛠️ IDE 与客户端集成
+
+### DBeaver 外部格式化程序设置
+
+在 DBeaver 中配置外部格式化程序，即可使用 `sqlfmt_ext` 一键格式化编辑器中的 SQL：
+
+1. 打开设置：`Preferences` -> `Database` -> `Editors` -> `SQL Editor` -> `Formatting`
+2. 更改 **Formatter** 为 `External Formatter`
+3. 配置如下参数：
+
+| 设置项 | 填写内容 |
+|---|---|
+| **Command / 程序** | `sqlfmt_ext.exe` |
+| **Arguments / 参数** | `${file}` |
+
+*注：在 DBeaver 中请**不要**添加 `--in-place` 参数，格式化结果会通过 `stdout` 自动回填到编辑器中。*
+
+---
+
+## ⚙️ 默认格式化风格
+
+| 选项名 | 默认值 | 说明 |
+|---|---|---|
+| `dialect` | `"doris"` | 方言选型（可选 `"doris"`, `"selectdb"`, `"mysql"`, `"sqlserver"`） |
+| `keyword_case` | `"lower"` | 关键字小写（如 `select`, `from`, `where`） |
+| `indent_width` | `4` | 基础缩进宽度为 4 个空格 |
+| `reindent_aligned` | `True` | 自动开启子句与表达式对齐 |
+| `align_list` | `True` | 开启 AS 别名列与多行列表垂直对齐 |
+| `wrap_after` | `30` | 超过指定长度后适度换行 |
+| `use_space_around_operators` | `True` | 运算符两侧保留空格 |
+
+---
+
+## 🛠️ 本地开发与测试
+
+```powershell
+# 1. 初始化 / 同步开发环境
+uv sync
+
+# 2. 运行完整测试套件 (269+ 用例)
+uv run pytest -q
+
+# 3. 仅运行收敛性测试
+uv run pytest -q -k convergence
+
+# 4. 构建发布 Wheel 包
+uv run python scripts/build_package.py
+```
+
+---
+
+## 📚 开发者指南与相关文档
+
+针对参与 `sqlfmt_ext` 开发、调试或需要深入了解架构设计的开发人员，请参阅：
+
+- [AGENTS.md](AGENTS.md)：AI 编码规范、硬约束（C1-C6）与阶段推进协议。
+- [.claude/plan/status.md](.claude/plan/status.md)：阶段状态、测试门槛数字与已知边界清单。
+- [.claude/plan/PLAN.md](.claude/plan/PLAN.md)：设计架构、优化目标与测试策略。
+- [.claude/plan/diffs.md](.claude/plan/diffs.md)：上游 `sqlparse` 语义差异表与规则细节。
+

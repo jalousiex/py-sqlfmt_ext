@@ -7,7 +7,7 @@
 ## §3.1 门槛（唯一真身）
 
 ```powershell
-.venv\Scripts\python.exe -m pytest -q
+uv run pytest -q
 ```
 
 | 项 | 值 |
@@ -16,7 +16,7 @@
 | 收敛门禁 `KNOWN_DIVERGENT` | **已清空**（S10 收口），别新增无原因的 xfail |
 | 唯一测试套件 | `tests/`（迁移期的 `tests_migration/` 随旧 fork 在 S7 删除） |
 
-只需看收敛门禁时：`.venv\Scripts\python.exe -m pytest -q -k convergence`。
+只需看收敛门禁时：`uv run pytest -q -k convergence`。
 
 **环境与部署命令（E2 起统一 uv）**：
 
@@ -24,7 +24,7 @@
 uv sync                                        # 开发环境（按 .python-version 取解释器）
 uv sync --frozen                               # 检出即复现（与 lock 不一致直接报错）
 uv lock --check                                # 依赖锁定一致性（期望退出码 0）
-python scripts\build_package.py                # 构建 wheel（脚本内部走 uv build）
+uv run python scripts\build_package.py         # 构建 wheel（脚本内部走 uv build）
 uv tool install --force --reinstall "<wheel>"  # 部署：隔离 tool 环境，不装 py 主解释器
 ```
 

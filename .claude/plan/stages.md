@@ -33,8 +33,8 @@ SQL Server（S8-c）已完成并保留（不回退、也不再往前推）；Ora
 ## §9.1 复现当前状态
 
 ```powershell
-.venv\Scripts\python.exe -m pytest -q                   # 门槛数字见 status.md §3.1
-.venv\Scripts\python.exe -m pytest -q -k convergence    # 只看收敛门禁
+uv run pytest -q                   # 门槛数字见 status.md §3.1
+uv run pytest -q -k convergence    # 只看收敛门禁
 ```
 
 只有一套测试（S7 删 fork 后 `tests_migration/` 已并入 `tests/`）。**残留：无。**
