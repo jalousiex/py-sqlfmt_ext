@@ -2,7 +2,7 @@
 
 > 用途：排查格式化差异、往 `sqlfmt_ext/` 加补偿之前读这里。
 > 章号沿用原 `PLAN.md`（本文件含 §3.4 与 §4）。**诊断手法**（元规则一~七、工作流、坑位）
-> 在技能 `sqlfmt-parity`（`.codebuddy/skills/sqlfmt-parity/`），本文件不重复。
+> 在技能 `sqlfmt-parity`（`.claude/skills/sqlfmt-parity/`），本文件不重复。
 
 ---
 

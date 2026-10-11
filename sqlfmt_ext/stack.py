@@ -117,6 +117,10 @@ def stack_pipeline(options=None):
 def format_sql(sql, options=None):
     """格式化单条 SQL（不 strip，行为对齐官方 ``sqlparse.format``）。"""
     opts = validate_options(options)
+    return _format_preserving_at_lines(sql, lambda part: _format_sql_part(part, opts))
+
+
+def _format_sql_part(sql, opts):
     stack = _assemble(opts)
     stack.postprocess.append(filters.SerializerUnicode())
     return "".join(stack.run(sql))
@@ -129,6 +133,30 @@ def format_statements(sql, options=None):
     逐批走上面那条原路，批之间插一行分隔符。
     """
     opts = validate_options(options)
+    return _format_preserving_at_lines(sql, lambda part: _format_statements_part(part, opts))
+
+
+def _format_preserving_at_lines(sql, format_part):
+    """原样保留独立 ``@`` 行，其余片段分别格式化。"""
+    output = []
+    pending = []
+    for line in sql.splitlines(keepends=True):
+        if line.lstrip(" \t").startswith("@"):
+            formatted = format_part("".join(pending)) if pending else ""
+            if formatted:
+                output.append(formatted)
+                if not formatted.endswith(("\n", "\r")):
+                    output.append("\r\n" if "\r\n" in sql else "\n")
+            output.append(line)
+            pending.clear()
+        else:
+            pending.append(line)
+    if pending:
+        output.append(format_part("".join(pending)))
+    return "".join(output)
+
+
+def _format_statements_part(sql, opts):
     separator = dialects.batch_separator_for(opts.get("dialect"))
     if not separator:
         return _format_batch(sql, opts)

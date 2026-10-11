@@ -1,5 +1,6 @@
 import pytest
 
+from sqlfmt_ext import format_sql, format_statements
 from tests.sqlfmt_test_helpers import format_with_entry_defaults
 
 
@@ -124,3 +125,32 @@ select b
 )
 def test_layout_variants(source, expected):
     assert format_with_entry_defaults(source) == expected
+
+
+@pytest.mark.parametrize(
+    "formatter",
+    [format_sql, format_statements],
+    ids=("format-sql", "format-statements"),
+)
+def test_standalone_at_lines_are_preserved(formatter):
+    directive = "  @custom value  "
+    comment = "-- AI账单用户标识回退：先更新用量明细，再更新额度快照。"
+    source = (
+        "select  a from t\n"
+        f"{directive}\n"
+        f"{comment}\n"
+        "@DWS.OA_AI_CREDIT_USAGE_F.sql\n"
+        "@DWS.OA_AI_CREDIT_QUOTA_F.sql\n"
+        "select  b from u"
+    )
+    expected = (
+        "select a\n"
+        "  from t\n"
+        f"{directive}\n"
+        f"{comment}\n"
+        "@DWS.OA_AI_CREDIT_USAGE_F.sql\n"
+        "@DWS.OA_AI_CREDIT_QUOTA_F.sql\n"
+        "select b\n"
+        "  from u"
+    )
+    assert formatter(source) == expected

@@ -1,7 +1,7 @@
 # 状态 — sqlfmt_ext 阶段状态与门槛
 
 > 本文件是**门槛数字的唯一真身**：别处（`AGENTS.md` / `README.md` / `MEMORY.md` / 技能）
-> 一律只写命令 + 指向本文件。阶段**过程**（靶子 / 根因 / 证据 / 残留）在 `stages.md`。
+> 一律只写命令 + 指向本文件。阶段**过程**（缺口 / 原因 / 证据 / 残留）在 `stages.md`。
 > 计划大纲与硬约束见 `PLAN.md`；章号沿用原 `PLAN.md`（本文件 = §3）。
 
 ## §3.1 门槛（唯一真身）
@@ -12,7 +12,7 @@ uv run pytest -q
 
 | 项 | 值 |
 |---|---|
-| 当前门槛 | **`269 passed`（0 failed / 0 xfailed）** |
+| 当前门槛 | **`271 passed`（0 failed / 0 xfailed）** |
 | 收敛门禁 `KNOWN_DIVERGENT` | **已清空**（S10 收口），别新增无原因的 xfail |
 | 唯一测试套件 | `tests/`（迁移期的 `tests_migration/` 随旧 fork 在 S7 删除） |
 
@@ -63,6 +63,7 @@ uv tool install --force --reinstall "<wheel>"  # 部署：隔离 tool 环境，�
 | **S16** | `ON` 锚点补后缀词边界（`ONLY` / `ONLINE` 不再被当成子句头） | 269 passed | ✅ |
 | **E1** | 工程化：入口收进 `sqlfmt_ext/cli.py`、下线根 `sqlfmt.py`、项目与发行名统一为 `sqlfmt_ext`、`-e` 与 wheel 双环境 + 构建/部署脚本 | 269 passed | ✅ |
 | **E2** | 工具链切 uv：dev 组取代 `requirements-dev.txt`、`uv.lock`/`.python-version` 入库、构建 `uv build`、部署 `uv tool install`（隔离 tool 环境）、删 `install_to_main.py`、`requires-python` 修正为 `>=3.10` | 269 passed | ✅ |
+| **S17** | 独立 `@` 定制行原样保留；普通 SQL 片段仍按原入口格式化 | 271 passed | ✅ |
 
 **E1（工程化）不涉及格式化逻辑**，门槛与 S16 相同（`269 passed`）；它换的是入口与打包形态：
 命令入口为 `sqlfmt_ext`（`sqlfmt_ext/cli.py:main`，`python -m sqlfmt_ext.cli` 等价），双环境模型是

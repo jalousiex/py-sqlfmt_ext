@@ -11,7 +11,7 @@
 - **开工**：先读 `.claude/plan/stages.md` 的**断点卡「下一步开工点」**，**本阶段只做这一件事**；四者矛盾时以断点卡为准。
 - **收工**：刷新断点卡（`stages.md`）+ 状态表（`status.md` §3.2）→ 沉淀长期事实 → 追加当日记录 → 提交。
 - **完整四步 / 六步清单见 `.claude/rules/stage-protocol-阶段推进协议.md`；开工即读，别省。**
-- **汇报格式（固定）**：`靶子 → 根因 → 改动 → 证据 → 验收（门槛数字）→ 残留 / 下一步`。
+- **汇报格式（固定）**：`缺口 → 原因 → 改动 → 证据 → 验收（数字） → 残留 / 下一步`。
 
 ## 硬约束（违反即为错误方案）
 
@@ -31,13 +31,13 @@
 |---|---|
 | 目标 / 非目标 / 架构 / 测试策略 | `.claude/plan/PLAN.md` §1 / §2 / §6 |
 | **门槛数字** / 阶段状态表 / 门禁清单 / 已知边界 | `.claude/plan/status.md` §3 |
-| **下一步开工点** / 各阶段卡（靶子·根因·证据·残留） | `.claude/plan/stages.md` §9 |
+| **下一步开工点** / 各阶段卡（缺口·原因·证据·残留） | `.claude/plan/stages.md` §9 |
 | U1–U16 语义差异、规则总表、每处补偿的落点与**调用时序** | `.claude/plan/diffs.md` §3.4 / §4 |
 | 架构管线、代码地图、测试约定、默认参数、命令用法 | `README.md`「AI 指引」 |
 | **安装 / 构建 / 部署（uv tool）/ uv 源与 lock** | `README.md`「安装」「构建与发布」 |
 | 迁移期历史与变更记录（追溯用） | `.claude/plan/history.md` |
 | 长期口径决策、协作约定（多代理 / worktree） | `.codebuddy/memory/MEMORY.md` |
-| **诊断与改法**（元规则一~七、工作流、坑位） | 技能 `sqlfmt-parity`（`.codebuddy/skills/sqlfmt-parity/`）：`SKILL.md` + `references/` |
+| **诊断与改法**（元规则一~七、工作流、坑位） | 技能 `sqlfmt-parity`（`.claude/skills/sqlfmt-parity/`，真源入库；`.codebuddy/skills/sqlfmt-parity/SKILL.md` 是脚本生成的指针）：`SKILL.md` + `references/` |
 
 **排查差异 / 改代码之前，先加载上表最后一行的技能** —— 元规则一「列对齐错乱先怀疑分组」、
 元规则七「`_process` 按组类名分发」等全部诊断手法与坑位都在那里。**本文件不重复其内容。**
