@@ -67,14 +67,17 @@ uv tool install --editable ./path-to-project
 ```powershell
 # Windows
 Expand-Archive -Path sqlfmt_ext-0.1.0-py3-none-any.zip -DestinationPath sqlfmt_wheels
-py -m pip install --no-index --find-links sqlfmt_wheels
+# python
+python -m pip install sqlfmt_ext --no-index --find-links sqlfmt_wheels
+# uv
+uv tool install sqlfmt_ext --offline --find-links .\sqlfmt_wheels
 sqlfmt_ext --help
 ```
 
 ```bash
 # Linux
 mkdir -p ~/sqlfmt_wheels && unzip -o sqlfmt_ext-0.1.0-py3-none-any.zip -d ~/sqlfmt_wheels
-python3 -m pip install --no-index --find-links ~/sqlfmt_wheels sqlfmt_ext
+python3 -m pip install sqlfmt_ext --no-index --find-links ~/sqlfmt_wheels
 sqlfmt_ext --help
 ```
 
@@ -86,7 +89,7 @@ wheel 本质是 zip，纯 Python 包可直接解包进环境，不经过 pip：
 
 ```powershell
 # Windows：解包进当前解释器的 site-packages（语义等同 pip 安装）
-py -c "import zipfile,site; [zipfile.ZipFile(f).extractall(site.getsitepackages()[0]) for f in ['sqlfmt_ext-0.1.0-py3-none-any.whl','sqlparse-0.6.0-py3-none-any.whl']]"
+python -c "import zipfile,site; [zipfile.ZipFile(f).extractall(site.getsitepackages()[0]) for f in ['sqlfmt_ext-0.1.0-py3-none-any.whl','sqlparse-0.6.0-py3-none-any.whl']]"
 py -m sqlfmt_ext --help
 ```
 
