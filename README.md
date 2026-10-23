@@ -52,6 +52,54 @@ uv sync --frozen
 uv tool install --editable ./path-to-project
 ```
 
+### 3. 断网机器离线安装
+
+打包产物是纯 Python 的 `py3-none-any` wheel，Windows / Linux / 架构通用，唯一硬性要求是
+目标机 **Python ≥ 3.10**（sqlparse 0.6.0 的 Requires-Python 下限）。
+
+`scripts/build_package.py --with-deps` 产出的离线 zip（如 `sqlfmt_ext-0.1.0-py3-none-any.zip`）
+内含主包与依赖两个 wheel，两条安装路径任选：
+
+**路径 A —— 目标机有 pip（推荐，装完有 `sqlfmt_ext` 命令）**
+
+把 zip 拷到断网机，解包成一个目录，用 `--no-index` 让 pip 只查本地目录、绝不联网：
+
+```powershell
+# Windows
+Expand-Archive -Path sqlfmt_ext-0.1.0-py3-none-any.zip -DestinationPath sqlfmt_wheels
+py -m pip install --no-index --find-links sqlfmt_wheels
+sqlfmt_ext --help
+```
+
+```bash
+# Linux
+mkdir -p ~/sqlfmt_wheels && unzip -o sqlfmt_ext-0.1.0-py3-none-any.zip -d ~/sqlfmt_wheels
+python3 -m pip install --no-index --find-links ~/sqlfmt_wheels sqlfmt_ext
+sqlfmt_ext --help
+```
+
+两个 wheel 在同一目录，`--no-index` 会从本地解析依赖（sqlparse 一并安装），全程不碰网络。
+
+**路径 B —— 目标机完全没有 pip（纯解包，`python -m` 方式）**
+
+wheel 本质是 zip，纯 Python 包可直接解包进环境，不经过 pip：
+
+```powershell
+# Windows：解包进当前解释器的 site-packages（语义等同 pip 安装）
+py -c "import zipfile,site; [zipfile.ZipFile(f).extractall(site.getsitepackages()[0]) for f in ['sqlfmt_ext-0.1.0-py3-none-any.whl','sqlparse-0.6.0-py3-none-any.whl']]"
+py -m sqlfmt_ext --help
+```
+
+```bash
+# Linux：解包到任意目录后用 PYTHONPATH 指过去（解 zip 即等于解了两个 wheel）
+mkdir -p ~/sqlfmt_ext && unzip -o sqlfmt_ext-0.1.0-py3-none-any.zip -d ~/sqlfmt_ext
+export PYTHONPATH=~/sqlfmt_ext
+python -m sqlfmt_ext --help
+```
+
+> 路径 B 没有 `sqlfmt_ext` 命令（入口点由 pip 注册），统一走 `python -m sqlfmt_ext`；
+> [sqlfmt_ext/__main__.py](./sqlfmt_ext/__main__.py) 与 console script 共享同一份 CLI 实现，行为一致。
+
 ---
 
 ## 💡 使用指南
