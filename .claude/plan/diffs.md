@@ -27,7 +27,7 @@
 | U11 | 官方 lexer 的空白粒度 | **每个空白字符各一个 token**（fork 用 `[^\S\r\n]+` 合并成一个） | ✅ `whitespace.merge_whitespace_runs` + `filters/whitespace.py::StripWhitespaceFilter`（在官方 `_stripws()` **之前**合并） |
 | U12 | 官方 `group_functions` | 把「`T.Name` 紧跟 `Parenthesis`」无条件当函数 → DDL/INSERT 对象名链的括号收不住，字段列表不展开 | ✅ `grouping._pre_wrap_object_name`（**官方分组前**，链尾紧跟 `(` 才包） |
 | U13 | 官方 `group_functions` 的 CREATE+TABLE 早退 | 官方「`has_create and has_table and not has_as → return`」严于 fork → `duplicate key(...)` 等被字段列表分支误展开 | ✅ `grouping._wrap_create_table_calls`（**官方分组后**，`_call_head` 排除子句关键字） |
-| U14 | 官方 `group_functions` 的 `OVER` 判定 | 用**下标相邻**判是否把 `OVER` 并进 `Function` → `)` 与 `over` 之间夹注释时判定失败 | ✅ `grouping._attach_over_to_functions`（`group()` 的**最后一步**） |
+| U14 | 官方 `group_functions` 的 `OVER` 判定 | 用**下标相邻**判是否把 `OVER` 并进 `Function` → `)` 与 `over` 之间夹注释时判定失败 | ✅ `grouping._attach_over_to_functions`（**两处调用**：官方分组后立即一次 + `group()` 最后一步一次，见 §4.4） |
 | U15 | 官方 `group_identifier_list.valid_next` | 认 `T.Keyword` → **尾逗号**后的子句关键字被吞进列表，列基准取错 | ✅ `grouping._trim_clause_tail`（**`_walk` 之后**） |
 | U16 | 官方词表缺方言**类型名**（如 `DATETIME`） | 官方**整词匹配** → 类型名落普通 `Name` → 与字段名粘成一个 `Identifier` → **DDL 列基准全错** | ✅ 类型词表归位 `dialects`（Doris 20 个 + MySQL 11 个）；`JSON` 等官方判成 `Keyword` 的走 `type_name_keywords` |
 
@@ -83,7 +83,7 @@
 
 ---
 
-## §4.4 `grouping.py` 补偿层（11 处）与调用时序
+## §4.4 `grouping.py` 补偿层（11 处补偿 / 12 个调用点）与调用时序
 
 **官方分组前**：
 1. `_group_interval_literals` —— 裸 `interval 1 day` 预成组 `TypedLiteral`（官方 `M_CLOSE` 只认 `T.String.Single`）
@@ -93,13 +93,18 @@
    （闸门 = TOP 在本方言是不是 `Keyword`；`Identifier` 组会被列表 extend 吸走，实测失败）
 
 **官方分组后**：
-5. `_walk` / `_group_level` + `_splice_continuations`
-6. `_unabsorb_trailing_comments` + `_absorb_leading_comments`（撤销官方 `align_comments` 的「并入前一个 TokenList」）
-7. `_create_guard` + `_flatten_identifier_lists`（边界 = `with`/`select`/`values` 中最先者）
-8. `_trim_clause_tail`（U15，**必须在 `_walk` 之后**）
-9. `_wrap_create_table_calls`（U13）
-10. `_extend_adjacent_lists` + `_normalize_adjacent_lists`（按**活下标**重扫并回）
-11. `_attach_over_to_functions`（U14，**最后一步**）
+5. `_attach_over_to_functions`（U14 **第一次**，**必须早于 `_walk`**）：官方 `align_comments`
+   会把「`)`` 与 ``over`` 之间」的注释并进 `Function` 末尾，此时 `over(…) as x` 还只是本层的
+   `Identifier` 兄弟。拖到 `_walk` 之后，`_group_level` 已把它当成**新列表项的开头**（列表在
+   `Function` 处被切断）→ 同一张字段列表被拆成两张、各自算列基准，`over` 被顶到很远的列上。
+6. `_walk` / `_group_level` + `_splice_continuations`
+7. `_unabsorb_trailing_comments` + `_absorb_leading_comments`（撤销官方 `align_comments` 的「并入前一个 TokenList」）
+8. `_create_guard` + `_flatten_identifier_lists`（边界 = `with`/`select`/`values` 中最先者）
+9. `_trim_clause_tail`（U15，**必须在 `_walk` 之后**）
+10. `_wrap_create_table_calls`（U13）
+11. `_extend_adjacent_lists` + `_normalize_adjacent_lists`（按**活下标**重扫并回）
+12. `_attach_over_to_functions`（U14 **第二次**，**最后一步**；`_normalize_adjacent_lists` 并回后
+    才凑齐「`Function` + 注释 + `Over`」的 `nested/sqltest3_s01` 靠这一次）
 
 辅助 `_refresh_values`：`TokenList.value` 是构造期缓存，搬动 token 后必须刷新。
 

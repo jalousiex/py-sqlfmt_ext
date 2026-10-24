@@ -11,14 +11,15 @@
 ## §9 断点卡
 
 > 落盘时间：2026-09-16（E2 收工刷新）。
-> **S1–S7、S9、S10、S10-b、S8-a~d、S11–S17、E1、E2 全部完成**，门槛与 `KNOWN_DIVERGENT` 现状见 `status.md §3`。
+> **S1–S7、S9、S10、S10-b、S8-a~d、S11–S18、E1、E2 全部完成**，门槛与 `KNOWN_DIVERGENT` 现状见 `status.md §3`。
 
 **方言优先级（用户口径，2026-09-13 定）**：**Doris / SelectDB 最优先 → 其次 MySQL →
 Oracle / SQL Server 暂缓不做**。S8-a~d 至此全部收：Doris/SelectDB 与 MySQL 已适配；
 SQL Server（S8-c）已完成并保留（不回退、也不再往前推）；Oracle 未开工。
 
-**下一步开工点（2026-10-11，S17 收工刷新）**：**无** —— S17（独立 `@` 定制行原样保留）已收，
-卡见本文件 §9.21；E2（工具链切 uv + 部署形态改 `uv tool install`）与方言路线也已走完。
+**下一步开工点（2026-10-24，S18 收工刷新）**：**无** —— S18（`over` 前夹注释的分组时序）已收，
+卡见本文件 §9.22；S17（独立 `@` 定制行原样保留）见 §9.21；
+E2（工具链切 uv + 部署形态改 `uv tool install`）与方言路线也已走完。
 
 **当前无「必须做」的缺口**：剩下的都是**登记在案的已知边界 / 事实**（都不影响现有 fixture，各自需先开
 新阶段卡再动手），清单见 `status.md §3.5`（其中第 9–12 条是 E2 登记的 uv 类事实）；写卡前请先做下面这条巡检。
@@ -534,3 +535,54 @@ tool 解释器**交给 uv 自选**（工作区已 pin `.python-version`）、`--
 **残留 / 下一步**：无。S17 之后暂无待推进阶段；下次发现新缺口时先按巡检要求复现并另开阶段卡。
 
 **回退方式**：回退 `stack.py` 的入口隔离逻辑、`test_layout_variants.py` 的回归测试及 S17 阶段记录即可。
+
+## §9.22 S18 已收（2026-10-24）：`over` 前夹注释时的分组时序
+
+**缺口**（用户样例 `C:\Users\lilj7\Desktop\over格式.sql`）：`sum(…) --` 后面的 `over(…)` 排在
+标准缩进（列 13），而 `first_value(…) --` 后面的 `over(…)` 被顶到列 93：
+
+```text
+       first_value(Amount_DQYE)                                                              --
+                                                                                             over(partition by AccCompanyCode,
+```
+
+用户口径：「`first_value` 后的 `over` 与 `sum` 后的**一样**，在注释换行后按标准长度缩进对齐」。
+
+**原因**（元规则一：列对齐错乱先怀疑分组）：三张 `/` 两张列表。官方 `align_comments` 把
+「`)` 与 `over` 之间」的注释并进前一个 `Function` 末尾
+（`Function[Identifier, Parenthesis, ws, Comment]`），于是
+- `_group_level` 看不到「`Function` + 注释 + `Over`」这个形状 → `over(…) as x` 被当成**新列表项的开头**，
+  字段列表在 `first_value(…)` 处被**切成两张**；
+- 两张列表各自算 `as` / 别名列基准 → 第二张的基准被其余长项抬高，`over` 落到列 93；
+- U14（`_attach_over_to_functions`）原守卫要求「`Function` 末尾是 `Parenthesis`」且「锚点与 holder
+  之间**本层**存在注释」——注释在 `Function` 内部，两条都不成立，且它当时排在 `_walk` **之后**，
+  列表早已切完，命中了也补不回来。
+
+**改动**（`sqlfmt_ext/grouping.py`，两个函数 + 一行调用）：
+1. 新增 `_trailing_comment_run(fn)`：识别「`Function` 末尾 `Parenthesis` + 空白 + 注释」
+   这一形态（返回末尾注释个数，`0` = 不是这形态）。
+2. `_attach_over_to_functions` 的守卫放宽：本层注释段为空但 `Function` 末尾是上条形态时同样成立
+   （注释已经在 `Function` 里，搬 `Over` 时顺序自然正确：`Function[…, Parenthesis, ws, Comment, ws, Over]`）。
+3. `group()` 在 `official.group(stmt)` **之后、`_walk` 之前**先调用一次
+   `_attach_over_to_functions`；末尾那次保留（`_normalize_adjacent_lists` 并回后才凑形的
+   `nested/sqltest3_s01` 靠它）。
+
+**证据**（同一份用户样例，修复前 → 修复后）：
+```text
+       first_value(Amount_DQYE) --                                        ← 注释回到行内
+             over(partition by AccCompanyCode, AccDeptCode, VendorCode, --
+                               Account_type order by PERIOD_ID desc) as Amount_DQYE_first  , -- 基准月原始期末余额
+```
+`over` 由列 93 → 列 13（与 `sum` 那条相同），`partition by` 列表与 `Account_type` 也回到 31 列。
+
+**验收**：新增 `cases/window/sqltest6_s04.sql`（实跑输出定稿）+ `.input.sql`（用户原始输入）；
+原 271 项**一项没动**，门槛 **276 passed**（0 failed / 0 xfailed）；
+样例幂等 + 收敛（压平输入）均为真。
+
+**残留 / 下一步**：
+- 隐式别名形（`row_number() /*c*/ over(…) rn`）仍**不幂等** —— 实测**改动前就如此**，非本阶段引入，
+  未修（见 `status.md` §3.5 第 13 条）。
+- 未动 U14 的其余判据（多词/无别名形）与 layout 层；本阶段只改分组时序。
+
+**回退方式**：`git revert` 单个提交（`grouping.py` 的 `_trailing_comment_run` + 守卫 + 提前调用，
+及 `cases/window/sqltest6_s04*` 两个 fixture）。

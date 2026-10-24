@@ -823,6 +823,31 @@ def _last_function_of(token):
     return None
 
 
+def _trailing_comment_run(fn):
+    """``fn`` 末尾「空白 + 注释」尾巴里注释的个数；尾巴之前必须紧跟 ``Parenthesis``。
+
+    用来识别官方 ``align_comments`` 的产物：它把注释并进前一个 ``TokenList`` 末尾，
+    于是「``)`` 与 ``OVER`` 之间」的注释跑到了 ``Function`` **内部**
+    （``Function[Identifier, Parenthesis, ws, Comment]``）。返回 ``0`` 表示末尾不是这种
+    形态（含「末尾就是 ``Parenthesis``」，那是官方已经处理过的正常形状）。
+    """
+    idx = len(fn.tokens) - 1
+    count = 0
+    while idx >= 0:
+        child = fn.tokens[idx]
+        if child.is_whitespace:
+            idx -= 1
+            continue
+        if isinstance(child, sql.Comment):
+            count += 1
+            idx -= 1
+            continue
+        break
+    if not count:
+        return 0
+    return count if idx >= 0 and isinstance(fn.tokens[idx], sql.Parenthesis) else 0
+
+
 def _attach_over_to_functions(tlist):
     """把 ``)`` 与 ``OVER`` 之间**夹着注释**的 ``OVER (…)`` 并回 ``Function``（U14）。
 
@@ -877,11 +902,16 @@ def _attach_over_to_functions(tlist):
 
         anchor = tlist.tokens[cursor] if cursor >= 0 else None
         fn = _last_function_of(anchor)
+        # 注释也可能**已经在 `Function` 内部**：官方 `align_comments` 会把「`)`` 与 ``over``
+        # 之间」的注释并到前一个 ``TokenList`` 末尾（``Function[Identifier, Parenthesis,
+        # ws, Comment]``）。此时本层的「空白 + 注释」段为空，但语义与上面那种形态完全相同
+        # —— 同样要并回去，否则 `_group_level` 会把 `over(…) as x` 当成新列表项的开头。
+        trailing = _trailing_comment_run(fn) if fn is not None else 0
         if (
-            not comments
+            not (comments or trailing)
             or fn is None
             or not fn.tokens
-            or not isinstance(fn.tokens[-1], sql.Parenthesis)
+            or (not trailing and not isinstance(fn.tokens[-1], sql.Parenthesis))
         ):
             idx += 1
             continue
@@ -944,6 +974,12 @@ def group(stmt):
     _pre_wrap_object_name(stmt)  # 必须在官方分组之前
     _pre_merge_top_clause(stmt)  # 必须在官方分组之前（TOP n 不参与字段列表）
     stmt = official.group(stmt)
+    # U14 必须先跑一次**再进 `_walk`**：官方 `align_comments` 把「`)`` 与 ``over`` 之间」
+    # 的注释吞进了 `Function`，此时 `over(…) as x` 还只是本层的一个 `Identifier` 兄弟。
+    # 若拖到 `_walk` 之后，`_group_level` 已经把它当成**新列表项的开头**（列表在 `Function`
+    # 处被切断），于是同一张字段列表被拆成两张、各自算列基准 —— 表现为 `over` 被顶到很远
+    # 的列上（用户样例 `first_value(…) -- / over(…)`）。
+    _attach_over_to_functions(stmt)
     _walk(stmt)
     # U13：CREATE+TABLE（无 AS）时官方不包 Function，这里补包（必须在官方分组之后）
     _wrap_create_table_calls(stmt)

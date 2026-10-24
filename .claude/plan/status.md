@@ -12,7 +12,7 @@ uv run pytest -q
 
 | 项 | 值 |
 |---|---|
-| 当前门槛 | **`271 passed`（0 failed / 0 xfailed）** |
+| 当前门槛 | **`276 passed`（0 failed / 0 xfailed）** |
 | 收敛门禁 `KNOWN_DIVERGENT` | **已清空**（S10 收口），别新增无原因的 xfail |
 | 唯一测试套件 | `tests/`（迁移期的 `tests_migration/` 随旧 fork 在 S7 删除） |
 
@@ -64,6 +64,7 @@ uv tool install --force --reinstall "<wheel>"  # 部署：隔离 tool 环境，�
 | **E1** | 工程化：入口收进 `sqlfmt_ext/cli.py`、下线根 `sqlfmt.py`、项目与发行名统一为 `sqlfmt_ext`、`-e` 与 wheel 双环境 + 构建/部署脚本 | 269 passed | ✅ |
 | **E2** | 工具链切 uv：dev 组取代 `requirements-dev.txt`、`uv.lock`/`.python-version` 入库、构建 `uv build`、部署 `uv tool install`（隔离 tool 环境）、删 `install_to_main.py`、`requires-python` 修正为 `>=3.10` | 269 passed | ✅ |
 | **S17** | 独立 `@` 定制行原样保留；普通 SQL 片段仍按原入口格式化 | 271 passed | ✅ |
+| **S18** | `over` 前夹注释时的分组时序：U14 提前到 `_walk` 之前（列表不再被切成两张、`over` 不再被顶到远列） | 276 passed | ✅ |
 
 **E1（工程化）不涉及格式化逻辑**，门槛与 S16 相同（`269 passed`）；它换的是入口与打包形态：
 命令入口为 `sqlfmt_ext`（`sqlfmt_ext/cli.py:main`，`python -m sqlfmt_ext.cli` 等价），双环境模型是
@@ -128,3 +129,7 @@ SQL Server 已完成并保留、**不回退也不再往前推**（用户口径�
 12. **【已修正的声明】`requires-python` 由 `>=3.9` 改为 `>=3.10`** —— 原声明与依赖不自洽（sqlparse 0.6.0 的
    `Requires-Python` 是 `>=3.10`）：pip 只按当前解释器解析，永远碰不到这个矛盾；`uv lock` 做**跨版本解析**时
    立刻报 `No solution found for 3.9.*`。属**修正错误声明**而非放宽支持 —— 3.9 本来就装不上本项目。
+13. **【已知边界】隐式别名 + 块注释的 `over` 形不幂等**（S18 期间实测，**改动前即如此**，不是回归）：
+   `select row_number() /*c*/ over(partition by b) rn, z from t` 首轮输出
+   `row_number() /*c*/  over(…) rn,`（注释与 `over` 同行、两空格），再格式化会回到「另起一行」。
+   显式 `as` 形（`over(…) as x`）已由 S18 修好且幂等；隐式别名形未纳入本阶段范围，要修先开新阶段卡。
