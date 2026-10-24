@@ -28,14 +28,21 @@
 # 安装到全局隔离 tool 环境
 uv tool install .
 
+# 改了仓库源码后必须重装（同版本不带 --reinstall 只会重写 exe、不重装包）
+uv tool install --force --reinstall .
+
 # 构建打包
 uv run python scripts/build_package.py
 
-# 分发whl后安装
+# 分发whl后安装（路径含版本号，升版本后要同步这里与 .vscode/tasks.json）
 uv tool install --force --reinstall "scripts/output/wheels/wheelhouse/sqlfmt_ext-0.1.0/sqlfmt_ext-0.1.0-py3-none-any.whl"
 ```
 
 安装完成后，命令行可以直接调用 `sqlfmt_ext`（自动写入用户 PATH 环境变量）。
+
+> **tool 环境是独立拷贝**：改仓库源码对已装好的全局工具**没有影响**（开发用 `.venv` 是可编辑安装，
+> 才即时生效）。所以 `pytest` 绿不代表命令行已是新逻辑 —— 每次改完 `sqlfmt_ext/` 都要重装；
+> 有下游机器还要重新打包 wheel / 离线 ZIP 再分发。判据与命令见根 `AGENTS.md`「改完必带的交付提示」。
 
 ### 2. 作为项目本地开发环境
 

@@ -102,6 +102,11 @@ description: sqlfmt 对拍修复：维护「官方 sqlparse 0.6.0 + sqlfmt_ext/ 
 `.claude/plan/status.md` §3.2 状态表、`MEMORY.md` 沉淀长期事实、追加当日记忆、提交
 （一个阶段一个可 revert 提交；含不可逆动作要写回退方式）。
 
+汇报**末尾还要附部署提示**：改了 `sqlfmt_ext/` 行为 → 全局工具仍是旧版本，需
+`uv tool install --force --reinstall .` 重装（同版本不带 `--reinstall` 不会重装包），
+有下游机器还要 `uv run python scripts/build_package.py` 重新打包分发。
+细则是 `.claude/rules/stage-protocol-阶段推进协议.md` 的「部署提示」一节。
+
 > 若判定的结论是「这条差异**不修**」（例如 `ON COMMIT` 刻意分行属口径本身），
 > 登记进收敛门禁的 `KNOWN_DIVERGENT`，**必须写清原因**，并在 `.claude/plan/diffs.md` §4 说明为什么。
 

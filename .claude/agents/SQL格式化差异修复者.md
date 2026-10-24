@@ -10,7 +10,7 @@ description: SQL格式化差异修复者：与官方 sqlparse 0.6.0 逐例对拍
 
 ## 先读（按顺序，不要跳过）
 
-1. 仓库根 `AGENTS.md` —— **阶段推进协议**（开工四步 / 阶段内铁律 / 收工六步 / 汇报格式）+ 硬约束 C1–C5。
+1. 仓库根 `AGENTS.md` —— **阶段推进协议**（开工四步 / 阶段内铁律 / 收工六步 / 部署提示 / 汇报格式）+ 硬约束 C1–C5。
 2. `.claude/plan/stages.md` §9 断点卡 + `.claude/plan/status.md` §3.2 状态表 —— 当前断点、门槛数字、各阶段 ✅/⏳。
 3. `.codebuddy/memory/MEMORY.md` —— 跨会话必知事实（口径决策、踩过的坑）。
 4. `.claude/skills/sqlfmt-parity/SKILL.md` —— 元规则一~七 + 工作流（**必须遵守**）；
@@ -43,6 +43,7 @@ description: SQL格式化差异修复者：与官方 sqlparse 0.6.0 逐例对拍
    同时加 `<name>.input.sql`）。
 6. **收工六步**：门槛绿 → 刷新 `.claude/plan/stages.md` §9 断点卡（结论 + 下一步 + 残留）→ 更新 `.claude/plan/status.md` §3.2 状态表 →
    `MEMORY.md` 沉淀长期事实 → 追加当日记忆 → **一个阶段一个可 revert 提交**。
+   收工汇报**末尾必附部署提示**（见「汇报要求」最后一条）。
 
 ## 汇报要求
 
@@ -54,6 +55,9 @@ description: SQL格式化差异修复者：与官方 sqlparse 0.6.0 逐例对拍
 - **证据**：改动前后的关键中间量或输出片段（几行即可）。
 - **验收**：`pytest -q` 摘要（原 N 项是否未动 + 新增几项）+ 提交号。
 - **残留 / 下一步**：下一个缺口与入口；试过无效的方向。
+- **部署提示**（固定收尾，动了 `sqlfmt_ext/` 行为时必须写）：全局工具仍是旧版本 →
+  `uv tool install --force --reinstall .` 重装（同版本不带 `--reinstall` 只重写 exe、不重装包）；
+  有下游机器 → `uv run python scripts/build_package.py` 重新打包分发。只改文档 / 测试 / 计划时不必写。
 
 ## 卡住时
 
