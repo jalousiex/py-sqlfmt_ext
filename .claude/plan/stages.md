@@ -513,8 +513,10 @@ tool 解释器**交给 uv 自选**（工作区已 pin `.python-version`）、`--
   可用（证据 3/4），确认无问题后**由你删除**该目录即可 —— `uv sync` 能凭 `uv.lock` 重建。
 - **DBeaver 的程序路径需你手工改**为 `%USERPROFILE%\.local\bin\sqlfmt_ext.exe`（README 表已更新为新路径；
   旧路径 `…pythoncore-3.14-64\Scripts\sqlfmt_ext.exe` 实测**并不存在**，即原有配置本身未落地）。
-- **VSCode「部署」任务与 README 各写一处 wheel 版本号** —— 升版本（`build_package.py 0.1.1`）后要同步这两处；
-  这是选定的「文档一行命令 + 任务」形态的**已知维护点**（不改产物目录布局、不加脚本，理由见计划卡）。
+- ~~**VSCode「部署」任务与 README 各写一处 wheel 版本号**~~ —— **已于 2026-10-24 关闭**：两处都改成
+  **不含版本号**的形态（任务 = `uv tool install --force --reinstall .` 源码直装；README = 一行
+  `Get-ChildItem … | Sort-Object LastWriteTime | Select-Object -Last 1` 自动取最新 wheel）；
+  `sqlfmt_ext.__version__` 也改成运行期从元数据读（唯一真身 = `pyproject.toml`），不再手写。
 - **dev(3.11.9) 与 tool(3.14.3) 解释器不同**：`uv tool install` 不读 `.python-version`（§3.5 第 9 条）。
   要让二者一致就加 `--python`；本次按用户口径「交给 uv 自选」**不加**。
 - **`--with-deps` 仍用 `python -m pip download`**：全项目唯一保留的 pip 用法（§3.5 第 10 条），别顺手「统一」掉。

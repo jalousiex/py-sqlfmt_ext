@@ -92,6 +92,9 @@ def _bump_version(new_version):
             encoding="utf-8",
         )
         print(f"版本升级: {old_version} → {new_version}")
+        # 版本号唯一真身是 pyproject.toml：`sqlfmt_ext.__version__` 运行期从元数据读回，无需同步；
+        # 但 uv.lock 里记的还是旧版本，`uv lock --check` 会判定不一致 —— 只提示，不代跑（离线机可能需要网络）。
+        print("提示: uv.lock 记录的版本已过期，请跑一次 uv lock（或 uv sync，会顺带更新）")
         return new_version
     print(f"当前版本: {old_version} (未变更)")
     return old_version

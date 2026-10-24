@@ -12,6 +12,7 @@
 """
 
 import sys
+from importlib.metadata import distributions as _iter_distributions
 
 try:
     from sqlfmt_ext.options import DEFAULT_OPTIONS, validate_options
@@ -37,4 +38,21 @@ __all__ = [
     "format_statements",
 ]
 
-__version__ = "0.1.0"
+def _installed_version(name="sqlfmt_ext"):
+    """已安装元数据里的版本号；找不到（或只有**没有 ``Version`` 字段**的空 ``*.egg-info``）返回 ``None``。
+
+    不走 ``importlib.metadata.version()``：它会命中仓库根那种**空的 ``sqlfmt_ext.egg-info``**
+    （构建残留、无 ``PKG-INFO``），拿回 ``None`` 而不是抛 ``PackageNotFoundError``。
+    """
+    for dist in _iter_distributions():
+        meta = dist.metadata
+        if meta and (meta["Name"] or "").lower().replace("-", "_") == name and dist.version:
+            return dist.version
+    return None
+
+
+# 版本号**不在源码里手写**：唯一真身是 `pyproject.toml`（构建时进 wheel 元数据），这里在运行期
+# 从已安装元数据读回来。手写常量必漂 —— `build_package.py <新版本>` 的 `_bump_version` 只改
+# `pyproject.toml`，打包不碰本文件（2026-10-24 实测：pyproject 已是 0.1.1，本文件还写 0.1.0）。
+# 未安装（直接从源码目录跑）时给可辨认的占位值，不伪装成发布版本。
+__version__ = _installed_version() or "0.0.0+source"

@@ -30,9 +30,10 @@
 			"group": "build"
 		},
 		{
-			// 部署 = uv tool install（隔离 tool 环境），不再装 py 主解释器。
-			// ⚠️ 下面的 wheel 路径含版本号：pyproject.toml 升版本后要同步这里与 README「构建与发布」。
-			"label": "部署：uv tool install（隔离 tool 环境）",
+			// 部署 = 源码直装进隔离 tool 环境（不再装 py 主解释器，也不再依赖 wheel 文件）。
+			// 用 `.` 而不是 wheel 路径：**不随版本号漂移**，升版本/改名都不用改本文件；
+			// 同版本必须带 --reinstall —— 不带 flag 时 uv 只重写 exe、不重装包。
+			"label": "部署：uv tool install（源码直装）",
 			"type": "process",
 			"command": "uv",
 			"args": [
@@ -40,16 +41,13 @@
 				"install",
 				"--force",
 				"--reinstall",
-				"scripts/output/wheels/wheelhouse/sqlfmt_ext-0.1.0/sqlfmt_ext-0.1.0-py3-none-any.whl"
+				"."
 			],
 			"options": {
 				"cwd": "${workspaceFolder}"
 			},
 			"problemMatcher": [],
-			"group": "build",
-			"dependsOn": [
-				"构建：打 wheel"
-			]
+			"group": "build"
 		},
 		{
 			"label": "测试：门禁 pytest",
