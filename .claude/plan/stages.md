@@ -11,16 +11,14 @@
 ## §9 断点卡
 
 > 落盘时间：2026-09-16（E2 收工刷新）。
-> **S1–S7、S9、S10、S10-b、S8-a~d、S11–S18、E1、E2 全部完成**，门槛与 `KNOWN_DIVERGENT` 现状见 `status.md §3`。
+> **S1–S7、S9、S10、S10-b、S8-a~d、S11–S19、E1、E2 全部完成**，门槛与 `KNOWN_DIVERGENT` 现状见 `status.md §3`。
 
 **方言优先级（用户口径，2026-09-13 定）**：**Doris / SelectDB 最优先 → 其次 MySQL →
 Oracle / SQL Server 暂缓不做**。S8-a~d 至此全部收：Doris/SelectDB 与 MySQL 已适配；
 SQL Server（S8-c）已完成并保留（不回退、也不再往前推）；Oracle 未开工。
 
-**下一步开工点（2026-10-24，S18 收工刷新）**：**无** —— S18（`over` 前夹注释的分组时序）已收，
-卡见本文件 §9.22；S17（独立 `@` 定制行原样保留）见 §9.21；
-E2（工具链切 uv + 部署形态改 `uv tool install`）与方言路线也已走完。
-
+**下一步开工点（2026-10-28，S19 收工刷新）**：**无** —— S19（字符串字面量里的转义反斜杠，
+U17）已收，卡见本文件 §9.23；S18（`over` 前夹注释的分组时序）见 §9.22。
 **当前无「必须做」的缺口**：剩下的都是**登记在案的已知边界 / 事实**（都不影响现有 fixture，各自需先开
 新阶段卡再动手），清单见 `status.md §3.5`（其中第 9–12 条是 E2 登记的 uv 类事实）；写卡前请先做下面这条巡检。
 
@@ -588,3 +586,60 @@ tool 解释器**交给 uv 自选**（工作区已 pin `.python-version`）、`--
 
 **回退方式**：`git revert` 单个提交（`grouping.py` 的 `_trailing_comment_run` + 守卫 + 提前调用，
 及 `cases/window/sqltest6_s04*` 两个 fixture）。
+
+## §9.23 S19（2026-10-28，开工）：字符串字面量里的 `\\` 转义把整段 SQL 吞成一个 token
+
+**缺口**（用户样例，`select` + `concat(Empname, '\\', DomainAccount)` + `case … like 'ex%'`）：
+格式化结果整片错乱 —— `concat` 与 `(` 之间被顶出 26 列空隙、函数实参被当成字段列表展开、
+`'ex%'` 被拆成 `'ex % '`、`where` 里的 `and` 不再分行、列对齐整体偏移。
+
+**原因**（**分词层**，不是布局层）：官方 0.6.0 的字符串正则是 `'(''|\\'|[^'])*'` ——
+它把 `\'`（反斜杠 + 引号）当转义，**但没有 `\\`（转义反斜杠）这一支**。于是 `'\\'` 里
+第 2 个反斜杠正好与后面的 `'` 配成 `\'` → 字符串**不结束**，一路吞到下一个 `'`，
+中间整段 SQL（`, DomainAccount) as display_name , … case when SourceFlag = '`）全被并进
+**一个 `T.Literal.String.Single` token**。后续分组 / 布局看到的输入已经是残缺的，
+所以「列对齐错乱」只是**下游症状**（元规则一：先怀疑更上游的口径）。
+
+**目标**：官方分词对 `\\` 的处理补齐，使含 `\\` 的字符串字面量**在正确位置闭合**；
+输出只取决于 token 流（与输入空白无关，C4）。
+
+**验收**：
+1. 用户样例格式化后 `concat(Empname, '\\', DomainAccount)` 与 `like 'ex%'` **原样**，
+   `and` 各占一行，列对齐与无 `\\` 的等价语句一致；
+2. 新增 fixture（`cases/escape/`）+ 窄测试钉住「`\\` 闭合」这件事；
+3. 全量门禁 `pytest -q` **0 failed / 0 xfailed**，原有用例**一项不动**。
+
+**改动**（3 个源文件 + 测试，无官方源码改动）：
+
+| # | 位置 | 改动 |
+|---|---|---|
+| ① | `sqlfmt_ext/policy.py` | 新增 `STRING_ESCAPE_REGEX`：单引号 `'(''|\\.|[^'])*'` → `T.Literal.String.Single`，双引号 `'"(""|\\.|[^"])*"'` → `T.Literal.String.Symbol`。把「反斜杠 + 任意字符」当成**一个**转义单元，于是两个反斜杠被整体吃掉、字符串在正确位置闭合 |
+| ② | `sqlfmt_ext/policy.py` | 新增 `STRING_ANCHORS`：官方两条字符串规则的 pattern，作为插入锚点（本项目的规则插到它们**之前**） |
+| ③ | `sqlfmt_ext/lexer.py` | `DialectLexer.default_initialization` **无条件**插入上面两条规则（与方言无关，含 `dialect=None`）。锚点找不到时退回 index 0 —— 官方词表里**没有**更靠前的规则能吃掉一个引号（注释 / 空白 / 关键字 / 数字都不匹配 `'`），提前匹配安全 |
+| ④ | `sqlfmt_ext/dialects.py` | docstring 校正：`dialect=None` 不追加**方言相关**的东西，但「上游缺陷修正」这条所有方言都打 |
+| ⑤ | `tests/fixtures/cases/escape/sqltest0_s01*`、`sqltest1_s01*` | 新增 topic `escape` 两个 fixture：`sqltest0_s01` 紧凑形态；`sqltest1_s01` = **用户原始语料**（input / expected 成对） |
+| ⑥ | `tests/test_sqlfmt_lexer.py` | 新增分词层窄测试 5 项：双反斜杠不再吞串、串中间的双反斜杠、`''` 与 `\'` 两种官方转义不受影响、双引号侧同机理、`dialect=None` 同样生效 |
+
+**证据**（用户样例，修复前 → 修复后）：
+
+```text
+-       concat                          (Empname                        ,      ← concat 与 ( 之间被顶出 26 列
+-                                        '\\', DomainAccount) as display_name      ,
+-            when DomainAccount like 'ex % ' then 'external'                   ← 'ex%' 被拆成 'ex % '
++       concat(Empname, '\\', DomainAccount) as display_name  ,                 ← 原样
++            when DomainAccount like 'ex%' then 'external'                      ← 原样
+```
+
+**验收**：新增 fixture 2 个 + 窄测试 5 项；原 276 项**一项没动**，门槛 **291 passed**
+（0 failed / 0 xfailed）；两个 fixture 的收敛（压平输入）与幂等门禁自动覆盖，均为真。
+
+**残留 / 下一步**：
+- 只改了**分词层**。字符串**语义**（MySQL 的 `\n`、`\t` 等转义含义）本项目不解释 ——
+  那是数据库的事，格式化器只保证**不把 SQL 拆坏**。
+- 官方正则的其余差异（`''` 双写、`\'` 转义引号）**行为不变**（已由窄测试钉住）。
+- 双引号侧同机理一并修了；但**未**处理「反斜杠在字符串**末尾**且无收尾引号」这类非法输入
+  （官方同样报错，非本阶段范围）。
+
+**回退方式**：`git revert` 单个提交（`policy.py` 的 `STRING_ESCAPE_REGEX` / `STRING_ANCHORS`、
+`lexer.py` 的那一次插入、`dialects.py` docstring，及 `cases/escape/` 两个 fixture 与
+`tests/test_sqlfmt_lexer.py`）。

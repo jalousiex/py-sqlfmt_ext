@@ -52,7 +52,7 @@
 | 目标 / 非目标 / 架构 / 测试策略 | `.claude/plan/PLAN.md` §1 / §2 / §6 |
 | **门槛数字** / 阶段状态表 / 门禁清单 / 已知边界 | `.claude/plan/status.md` §3 |
 | **下一步开工点** / 各阶段卡（缺口·原因·证据·残留） | `.claude/plan/stages.md` §9 |
-| U1–U16 语义差异、规则总表、每处补偿的落点与**调用时序** | `.claude/plan/diffs.md` §3.4 / §4 |
+| U1–U17 语义差异、规则总表、每处补偿的落点与**调用时序** | `.claude/plan/diffs.md` §3.4 / §4 |
 | 架构管线、代码地图、测试约定、默认参数、命令用法 | `README.md`「AI 指引」 |
 | **安装 / 构建 / 部署（uv tool）/ uv 源与 lock** | `README.md`「安装」「构建与发布」 |
 | 迁移期历史与变更记录（追溯用） | `.claude/plan/history.md` |

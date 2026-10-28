@@ -7,7 +7,7 @@
 
 门槛（默认值即当前口径，数字以 `.claude/plan/status.md` §3.1 为准，那是唯一真身）：
 
-- 通过数**严格等于** `--expect`（默认 `269 passed`）；
+- 通过数**严格等于** `--expect`（默认 `291 passed`）；
 - 不得出现 `failed` / `error`；
 - 不得出现 `xfailed` / `xpassed` —— 收敛门禁的 `KNOWN_DIVERGENT` 已清空，出现 xfail 就是
   新登记的已知发散，必须有人解释（`xfail(strict=True)` 会在修好时主动报错）。
@@ -83,7 +83,7 @@ def fmt(counts: dict[str, int]) -> str:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="sqlfmt_ext 门禁（唯一套件 tests/）")
     ap.add_argument("--root", help="仓库根（默认按 cwd 向上查找 sqlfmt_ext/grouping.py）")
-    ap.add_argument("--expect", default="269 passed", help="期望摘要（改门槛时同步 .claude/plan/status.md §3.1）")
+    ap.add_argument("--expect", default="291 passed", help="期望摘要（改门槛时同步 .claude/plan/status.md §3.1）")
     ap.add_argument("--filter", metavar="TAGS", help="用例标签过滤（设置 SQLFMT_CASE_TAGS）")
     args = ap.parse_args(argv)
 

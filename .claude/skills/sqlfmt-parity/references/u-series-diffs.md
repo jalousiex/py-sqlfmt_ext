@@ -22,6 +22,7 @@
 |---|---|---|
 | U10 | 官方词表本有 `OVER`，但更靠前的「函数名正则」`[A-ZÀ-Ü]\w*(?=\()` 先把 `over(` 判成 `Name`，`sql.Over` 永远分不出来 | `policy.PRECEDENCE_REGEX` + lexer **index 0** 的优先级补丁 |
 | U16 | 官方词表缺 `DATETIME`。两侧 `Name.Builtin` 段逐条相同，但 fork 的关键字正则**不要词尾边界**（`DATE` 把 `DATETIME` 前缀命中）→ `datetime` 落成普通 `Name` → 被 `group_identifier` 与字段名粘成 `Identifier` → DDL **类型列**取不到 token → 整条 DDL 列基准全错 | `policy.KEYWORDS_TYPES = {"DATETIME": T.Name.Builtin}`。**同类（`INT64`/`INT32`/`DATE32`…）照此加一条** |
+| U17 | **官方自身的缺陷**（不是 fork 差异）：官方字符串正则 `'(''|\\'|[^'])*'` 只认「反斜杠 + 引号」这一支转义，**不认「反斜杠 + 反斜杠」** → 含双反斜杠的字符串字面量（MySQL / Doris 里表示「一个反斜杠」）**不闭合**，一路吞到下一个引号，中间整段 SQL 并进**同一个**字符串 token → 症状是「列对齐整体错乱 / 函数被拆开 / `'ex%'` 变 `'ex % '」 | `policy.STRING_ESCAPE_REGEX`（单引号 + 双引号两条，把「反斜杠 + 任意字符」当一个转义单元）+ `lexer.py` **无条件**插入（与方言无关，含 `dialect=None`）。与官方正则相比**只差**「反斜杠后面不是引号」这一种情形；`''` / `\'` / 结尾单反斜杠经回溯后与官方完全一致 |
 
 **分词坑**：`Token.match(ttype, values, regex=True)` 是拿 values 里每一条**整正则**去 `pattern.search(token.normalized)`。所以多词关键字必须**先合并成一个 token** 才可能被 `split_words` 匹配（`lateral` + `view` 两个 token 谁都匹配不上 `LATERAL\s+VIEW`）。已给 `LATERAL VIEW` 补兜底合并（白名单条目之后按顺序尝试）。
 

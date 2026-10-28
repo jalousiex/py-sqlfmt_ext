@@ -1,4 +1,4 @@
-# 差异与补偿 — 上游语义差异（U1–U16）与规则总表
+# 差异与补偿 — 上游语义差异（U1–U17）与规则总表
 
 > 用途：排查格式化差异、往 `sqlfmt_ext/` 加补偿之前读这里。
 > 章号沿用原 `PLAN.md`（本文件含 §3.4 与 §4）。**诊断手法**（元规则一~七、工作流、坑位）
@@ -30,6 +30,7 @@
 | U14 | 官方 `group_functions` 的 `OVER` 判定 | 用**下标相邻**判是否把 `OVER` 并进 `Function` → `)` 与 `over` 之间夹注释时判定失败 | ✅ `grouping._attach_over_to_functions`（**两处调用**：官方分组后立即一次 + `group()` 最后一步一次，见 §4.4） |
 | U15 | 官方 `group_identifier_list.valid_next` | 认 `T.Keyword` → **尾逗号**后的子句关键字被吞进列表，列基准取错 | ✅ `grouping._trim_clause_tail`（**`_walk` 之后**） |
 | U16 | 官方词表缺方言**类型名**（如 `DATETIME`） | 官方**整词匹配** → 类型名落普通 `Name` → 与字段名粘成一个 `Identifier` → **DDL 列基准全错** | ✅ 类型词表归位 `dialects`（Doris 20 个 + MySQL 11 个）；`JSON` 等官方判成 `Keyword` 的走 `type_name_keywords` |
+| U17 | 官方 `keywords.SQL_REGEX` 的**字符串**正则 `'(''|\\'|[^'])*'` | 只认「反斜杠 + 引号」这一支转义，**不认「反斜杠 + 反斜杠」** → 含双反斜杠的字符串字面量**不闭合**，把后续整段 SQL 吞进同一个字符串 token（症状表现为「列对齐整体错乱」） | ✅ `policy.STRING_ESCAPE_REGEX`（单引号 + 双引号两条）+ `lexer.py` **无条件**插入（与方言无关，含 `dialect=None`）。**这条是官方自身的缺陷（不是 fork 差异）** —— 属「上游缺陷修正」 |
 
 ### §3.4.1 三个最常踩的坑
 

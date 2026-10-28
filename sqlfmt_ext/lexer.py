@@ -28,6 +28,12 @@ class DialectLexer(Lexer):
         dialect = dialects.get_dialect(self.dialect)
         # 词表：方言关键字 + 类型名（追加查询，不覆盖官方已有键）
         self.add_keywords(dict(dialect.extra_keywords))
+        # 字符串转义补丁（U17）：**无条件**打，与方言无关。官方字符串正则不认
+        # 「反斜杠 + 反斜杠」，含它的字符串字面量不闭合并吞掉后续整段 SQL
+        # （见 `policy.STRING_ESCAPE_REGEX` 的注释）。
+        # 锚点找不到时退回 index 0 —— 官方词表里**没有**任何更靠前的规则能吃掉一个
+        # 引号（注释 / 空白 / 关键字 / 数字都不匹配 `'`），所以提前匹配是安全的。
+        self._insert_rules(policy.compiled(policy.STRING_ESCAPE_REGEX), policy.STRING_ANCHORS, 0)
         if dialect.multiword_patches:
             # 多词关键字：前插到官方多词关键字区块，避免被通用单词规则抢先
             self._insert_rules(policy.compiled(policy.MULTIWORD_REGEX), policy.ANCHOR_PATTERNS, len(self._SQL_REGEX) - 8)

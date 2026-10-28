@@ -78,7 +78,7 @@ description: sqlfmt 对拍修复：维护「官方 sqlparse 0.6.0 + sqlfmt_ext/ 
 按此顺序判断，避免改错层：
 
 1. **树形不同** → 分词组（`sqlfmt_ext/grouping.py`）。对照 `references/u-series-diffs.md`
-   看是否已有同类补偿（U1–U16），并注意每处补偿的**调用时序约束**。
+   看是否已有同类补偿（U1–U17），并注意每处补偿的**调用时序约束**。
 2. **树形相同、中间量不同** → 入参问题（offset / 列表项集合 / 注释吸收逻辑）。
 3. **树形与中间量都相同** → 才看 `passes/align.py` / `passes/layout.py`（此时多半是
    「空白写到了错误的相邻位置」，而不是算术）。
@@ -122,7 +122,7 @@ description: sqlfmt 对拍修复：维护「官方 sqlparse 0.6.0 + sqlfmt_ext/ 
 
 ## 资源
 
-- `references/u-series-diffs.md` — 官方 0.6.0 与旧 fork 的 U1–U16 差异、根因、补偿落点与**时序约束**。
+- `references/u-series-diffs.md` — 官方 0.6.0 与旧 fork 的 U1–U17 差异、根因、补偿落点与**时序约束**。
 - `references/grouping-and-layout.md` — `grouping.py` 补偿清单、官方分组步骤顺序、注释缩进口径、
   架构决策，以及 `group()` 的真实调用次序。
 - `references/tooling.md` — 诊断手法与**坑位**（其中若提到 `_tmp_*.py` 脚本，说明那是迁移期脚本，

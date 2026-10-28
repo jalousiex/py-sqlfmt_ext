@@ -33,6 +33,9 @@ TOPIC_META = {
     "debug": {"label": "调试", "tags": ("debug", "short", "split")},
     "comma": {"label": "逗号选项", "tags": ("comma", "short", "split")},
     "generic": {"label": "泛型类型", "tags": ("generic", "short", "split")},
+    # 转义（S19）：字符串字面量里的「反斜杠 + 反斜杠」——官方分词不认这一支，
+    # 字符串不闭合并吞掉后续整段 SQL（见 `.claude/plan/diffs.md` U17）。
+    "escape": {"label": "转义", "tags": ("escape", "short", "split")},
     # 方言用例：topic 级 options 让整组跑在指定方言上（`_build_case` 支持 topic 级 options）
     "dialect": {"label": "方言", "tags": ("dialect", "short", "split"), "options": {"dialect": "doris"}},
     "sqlserver": {"label": "方言（SQL Server）", "tags": ("sqlserver", "short", "split"), "options": {"dialect": "sqlserver"}},
