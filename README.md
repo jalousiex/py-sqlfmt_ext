@@ -31,11 +31,12 @@ uv tool install .
 # 改了仓库源码后必须重装（同版本不带 --reinstall 只会重写 exe、不重装包）
 uv tool install --force --reinstall .
 
-# 构建打包（分发用；产物在 scripts/output/wheels/wheelhouse/sqlfmt_ext-<版本>/）
+# 构建打包（分发用；产物在 <运行位置>/output/wheels/，其中 wheelhouse/ 是**共享池**、
+# 主包与依赖 whl 平铺共存、不按版本分子目录；从仓库根跑即 output/wheels/...）
 uv run python scripts/build_package.py
 
 # 拿到 whl 后安装：自动取最新产物，不用手改版本号
-uv tool install --force --reinstall (Get-ChildItem scripts\output\wheels\wheelhouse -Recurse -Filter sqlfmt_ext-*.whl | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
+uv tool install --force --reinstall (Get-ChildItem output\wheels\wheelhouse -Filter sqlfmt_ext-*.whl | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
 ```
 
 安装完成后，命令行可以直接调用 `sqlfmt_ext`（自动写入用户 PATH 环境变量）。
@@ -69,8 +70,11 @@ uv tool install --editable ./path-to-project
 打包产物是纯 Python 的 `py3-none-any` wheel，Windows / Linux / 架构通用，唯一硬性要求是
 目标机 **Python ≥ 3.10**（sqlparse 0.6.0 的 Requires-Python 下限）。
 
-`scripts/build_package.py --with-deps` 产出的离线 zip（如 `sqlfmt_ext-0.1.0-py3-none-any.zip`）
-内含主包与依赖两个 wheel，两条安装路径任选：
+`scripts/build_package.py --with-deps` 产出的离线 zip（如 `sqlfmt_ext-0.1.1-py3-none-any.zip`，
+从仓库根跑时落在 `output/wheels/`）内含主包与依赖两个 wheel，两条安装路径任选：
+
+VS Code 里 `Ctrl+Shift+B` 跑默认任务「**打包：离线 ZIP（主包+依赖，可选升版本）**」即出这个 zip
+（版本号留空 = 沿用 `pyproject.toml` 当前版本；另有「打包：wheel（仅主包）」）。
 
 **路径 A —— 目标机有 pip（推荐，装完有 `sqlfmt_ext` 命令）**
 
@@ -78,7 +82,7 @@ uv tool install --editable ./path-to-project
 
 ```powershell
 # Windows
-Expand-Archive -Path sqlfmt_ext-0.1.0-py3-none-any.zip -DestinationPath sqlfmt_wheels
+Expand-Archive -Path sqlfmt_ext-0.1.1-py3-none-any.zip -DestinationPath sqlfmt_wheels
 # python
 python -m pip install sqlfmt_ext --no-index --find-links sqlfmt_wheels
 # uv
@@ -88,7 +92,7 @@ sqlfmt_ext --help
 
 ```bash
 # Linux
-mkdir -p ~/sqlfmt_wheels && unzip -o sqlfmt_ext-0.1.0-py3-none-any.zip -d ~/sqlfmt_wheels
+mkdir -p ~/sqlfmt_wheels && unzip -o sqlfmt_ext-0.1.1-py3-none-any.zip -d ~/sqlfmt_wheels
 python3 -m pip install sqlfmt_ext --no-index --find-links ~/sqlfmt_wheels
 sqlfmt_ext --help
 ```
@@ -101,13 +105,13 @@ wheel 本质是 zip，纯 Python 包可直接解包进环境，不经过 pip：
 
 ```powershell
 # Windows：解包进当前解释器的 site-packages（语义等同 pip 安装）
-python -c "import zipfile,site; [zipfile.ZipFile(f).extractall(site.getsitepackages()[0]) for f in ['sqlfmt_ext-0.1.0-py3-none-any.whl','sqlparse-0.6.0-py3-none-any.whl']]"
+python -c "import zipfile,site; [zipfile.ZipFile(f).extractall(site.getsitepackages()[0]) for f in ['sqlfmt_ext-0.1.1-py3-none-any.whl','sqlparse-0.6.0-py3-none-any.whl']]"
 py -m sqlfmt_ext --help
 ```
 
 ```bash
 # Linux：解包到任意目录后用 PYTHONPATH 指过去（解 zip 即等于解了两个 wheel）
-mkdir -p ~/sqlfmt_ext && unzip -o sqlfmt_ext-0.1.0-py3-none-any.zip -d ~/sqlfmt_ext
+mkdir -p ~/sqlfmt_ext && unzip -o sqlfmt_ext-0.1.1-py3-none-any.zip -d ~/sqlfmt_ext
 export PYTHONPATH=~/sqlfmt_ext
 python -m sqlfmt_ext --help
 ```
@@ -213,6 +217,9 @@ uv run pytest -q -k convergence
 
 # 4. 构建发布 Wheel 包
 uv run python scripts/build_package.py
+
+# 5. 打包离线 ZIP（断网机分发：主包 + 依赖 wheel）
+uv run python scripts/build_package.py --with-deps
 ```
 
 ---

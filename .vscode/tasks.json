@@ -15,19 +15,45 @@
 			"group": "none"
 		},
 		{
-			"label": "构建：打 wheel",
+			// 单包项目：无 packages/ 目录，参数只有「可选新版本号」。留空 = 沿用 pyproject.toml 的版本。
+			// 工具链统一走 uv（硬约束 C6）；不用 ${config:python.defaultInterpreterPath} 跑脚本，
+			// 因为 .venv 不带 pip，离线打包里的 pip 步骤由 uv 临时环境注入。
+			"label": "打包：wheel（仅主包，可选升版本）",
 			"type": "process",
 			"command": "uv",
 			"args": [
 				"run",
 				"python",
-				"scripts/build_package.py"
+				"scripts/build_package.py",
+				"${input:buildVersion}"
 			],
 			"options": {
 				"cwd": "${workspaceFolder}"
 			},
 			"problemMatcher": [],
 			"group": "build"
+		},
+		{
+			// 离线分发用的 ZIP：主包 + 依赖 wheel 平铺，拷到断网机解包后
+			// `uv tool install sqlfmt_ext --offline --find-links <解包目录>`。
+			"label": "打包：离线 ZIP（主包+依赖，可选升版本）",
+			"type": "process",
+			"command": "uv",
+			"args": [
+				"run",
+				"python",
+				"scripts/build_package.py",
+				"${input:buildVersion}",
+				"--with-deps"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
 		},
 		{
 			// 部署 = 源码直装进隔离 tool 环境（不再装 py 主解释器，也不再依赖 wheel 文件）。
@@ -63,6 +89,14 @@
 			},
 			"problemMatcher": [],
 			"group": "test"
+		}
+	],
+	"inputs": [
+		{
+			"id": "buildVersion",
+			"type": "promptString",
+			"description": "新版本号（留空 = 保持 pyproject.toml 当前版本；例如 0.1.2）",
+			"default": ""
 		}
 	]
 }
