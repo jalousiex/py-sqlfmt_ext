@@ -224,6 +224,18 @@ uv run python scripts/build_package.py --with-deps
 
 ---
 
+## ⚠️ 已知边界
+
+- **超长单条语句**：官方 `sqlparse` 的分组护栏是 10000 token（且**每一层**都检查）。本项目按语句
+  临时放宽（连续空白先并段、退出即还原），`format_statements()` 与 CLI 不再因超限失败；但单条
+  语句超过 **10 万 token**、或嵌套深度超过官方上限时仍会抛 `SQLParseError`：CLI 逐条「原样保留 +
+  WARN（含语句序号与 token 规模）」，`format_sql()` 单条 API 则把异常交给调用方。
+- 超长语句的排版耗时随 token 数近似**二次**增长（实测 3400 列约 10s、520 分支 `union all` 约 7s），
+  属性能量级、不是超限 bug。
+- 其余已知边界（均为有意保留）见 [.claude/plan/status.md](.claude/plan/status.md) §3.5。
+
+---
+
 ## 📚 开发者指南与相关文档
 
 针对参与 `sqlfmt_ext` 开发、调试或需要深入了解架构设计的开发人员，请参阅：
