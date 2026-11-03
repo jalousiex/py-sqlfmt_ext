@@ -12,7 +12,7 @@ uv run pytest -q
 
 | 项 | 值 |
 |---|---|
-| 当前门槛 | **`291 passed`（0 failed / 0 xfailed）** |
+| 当前门槛 | **`296 passed`（0 failed / 0 xfailed）** |
 | 收敛门禁 `KNOWN_DIVERGENT` | **已清空**（S10 收口），别新增无原因的 xfail |
 | 唯一测试套件 | `tests/`（迁移期的 `tests_migration/` 随旧 fork 在 S7 删除） |
 
@@ -66,6 +66,7 @@ uv tool install --force --reinstall "<wheel>"  # 部署：隔离 tool 环境，�
 | **S17** | 独立 `@` 定制行原样保留；普通 SQL 片段仍按原入口格式化 | 271 passed | ✅ |
 | **S18** | `over` 前夹注释时的分组时序：U14 提前到 `_walk` 之前（列表不再被切成两张、`over` 不再被顶到远列） | 276 passed | ✅ |
 | **S19** | 字符串字面量里的转义反斜杠：官方正则缺「反斜杠 + 反斜杠」这一支 → 字符串不闭合并吞掉后续整段 SQL（U17，分词层修正） | 291 passed | ✅ |
+| **S20** | 超长语句越过官方 `MAX_GROUPING_TOKENS`（10000）：按语句临时抬闸门（锁内、退出还原、10 万 token 硬上限）+ 空白并段；`SQLParseError` 逐条「原样保留 + WARN」，CLI 文件级兜底不抛 traceback | 296 passed | ✅ |
 
 **E1（工程化）不涉及格式化逻辑**，门槛与 S16 相同（`269 passed`）；它换的是入口与打包形态：
 命令入口为 `sqlfmt_ext`（`sqlfmt_ext/cli.py:main`，`python -m sqlfmt_ext.cli` 等价），双环境模型是
@@ -134,3 +135,7 @@ SQL Server 已完成并保留、**不回退也不再往前推**（用户口径�
    `select row_number() /*c*/ over(partition by b) rn, z from t` 首轮输出
    `row_number() /*c*/  over(…) rn,`（注释与 `over` 同行、两空格），再格式化会回到「另起一行」。
    显式 `as` 形（`over(…) as x`）已由 S18 修好且幂等；隐式别名形未纳入本阶段范围，要修先开新阶段卡。
+14. **【已知边界】超长语句的耗时仍是 `LayoutPass` 的固有量级**（S20）—— token 闸门按语句放宽后，
+   `format_statements()` 不再失败，但超长语句近似二次增长（实测 4000 列约 10s、520 分支约 7s）；
+   `format_sql()`（单条 API）在超过 `_ABSOLUTE_TOKEN_CEILING`（10 万 token）或官方分组深度上限时
+   仍抛 `SQLParseError`（CLI 走的 `format_statements()` 已逐条降级）。性能优化另开阶段卡。

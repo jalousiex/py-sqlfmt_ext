@@ -53,12 +53,65 @@
    字段列表变成 ``[10 id, name]``，列基准取到数字上。见 ``_pre_merge_top_clause``。
 """
 
+import threading
+from contextlib import contextmanager
+
 from sqlparse import sql
 from sqlparse import tokens as T
 from sqlparse.engine import grouping as official
+from sqlparse.exceptions import SQLParseError
 from sqlparse.utils import imt
 
 from . import dialects, policy
+from .whitespace import merge_whitespace_runs
+
+# 官方 ``_group`` 的 DoS 闸门（sqlparse 0.6：``MAX_GROUPING_TOKENS = 10000``）：
+# ``len(tlist.tokens) > limit`` 就抛 ``SQLParseError``，且**每一层**都检查（语句根层与
+# 子组都算）。它不是正确性约束，只是防打爆；而本项目的超长 SQL（多分支 ``union all``、
+# 几千列的字段清单）在根层就会越过 10000，整条语句于是完全无法格式化。
+#
+# 这里只对**当前语句**把闸门抬到它的 token 数，退出 ``group`` 立即还原（见
+# ``_relaxed_token_limit``）。抬闸门覆盖得住的依据：子组的 token 数必然 ≤ 根层
+# （子组是根层一段连续 token 的替换，二者不重叠），所以根层上限即为全树上限。
+_RELAX_LOCK = threading.Lock()
+# 自设兜底上限：超过它就不再放宽，交给调用方「按原样保留 + WARN」——否则等于把
+# DoS 闸门抬到「单条语句能把进程拖死」的量级。
+_ABSOLUTE_TOKEN_CEILING = 100_000
+
+
+def _grouping_limit():
+    """官方 token 闸门的当前值；官方没有该常量（更早版本）时返回 ``None``。"""
+    return getattr(official, "MAX_GROUPING_TOKENS", None)
+
+
+@contextmanager
+def _relaxed_token_limit(token_count):
+    """在**当前语句**范围内把官方 token 闸门抬到 ``token_count``，退出即还原。
+
+    三点约束（对应「受控」二字）：
+
+    - **按版本探测**：常量不存在 = 该版本没有闸门，什么也不做；
+    - **只升不降**：语句没超限时原样走官方路径，不做任何全局改动；
+    - **有硬上限**：超过 ``_ABSOLUTE_TOKEN_CEILING`` 直接抛 ``SQLParseError``，
+      由 ``stack._format_batch`` 逐条降级（原样保留），不把进程交给一条超长语句。
+    """
+    current = _grouping_limit()
+    if current is None or token_count <= current:
+        yield
+        return
+    if token_count > _ABSOLUTE_TOKEN_CEILING:
+        raise SQLParseError(
+            f"单条语句 token 数 {token_count} 超过安全上限 {_ABSOLUTE_TOKEN_CEILING}"
+        )
+    # 闸门是模块级全局量，改它必须串行，且**无论如何**在 finally 里还原。
+    with _RELAX_LOCK:
+        previous = official.MAX_GROUPING_TOKENS
+        official.MAX_GROUPING_TOKENS = token_count + 1
+        try:
+            yield
+        finally:
+            official.MAX_GROUPING_TOKENS = previous
+
 
 # 判「这是不是子句关键字」用的词表：通用词 + **所有**方言的锚点词。
 # 必须取并集而不是「当前方言」——分组形状不该随方言开关变化（见 `dialects.all_split_words`）。
@@ -968,7 +1021,29 @@ def _attach_over_to_functions(tlist):
 
 
 def group(stmt):
-    """官方分组 + 本项目补偿。调用方用它替换 ``grouping.group``。"""
+    """官方分组 + 本项目补偿。调用方用它替换 ``grouping.group``。
+
+    **超长语句**（token 数越过官方 ``MAX_GROUPING_TOKENS``）在这里放行：闸门只对当前
+    语句抬高、出栈即还原，格式化口径与「官方不设闸门」逐 token 一致（因此幂等性不变）。
+    为什么不按 ``union all`` 预切分：①单个 ``select`` 的几千列字段清单没有可切的安全
+    边界 —— 列对齐取**整张列表**的最宽项，切成两段各自对齐会改变输出、二次格式化不再
+    稳定（实测）；②官方闸门在**每一层**检查，切完的段里仍可能有超限子查询，预切分
+    并不能独立解决问题；③只对 ``union all`` 走两条路径会让大小写归一、空白边界各分叉。
+    「把长清单/分支拆行降低 token 数」单靠重排也不可行：每个「名字 + 逗号 + 空白」各占
+    一个 token，重排只改空白值、不改个数。真正能降下来的是**空白粒度**——官方 lexer 对
+    每个空白字符各出一个 token，而本项目的输出又大量靠空格对齐：同一份 4000 列 SQL 首次
+    输入约 1.2 万 token，格式化后（对齐空格铺满）再进来会涨到 13 万，于是「同一份文件
+    第二次仍要放行」必须先把连续空白并段。``merge_whitespace_runs`` 本来就是
+    ``StripWhitespaceFilter`` 与布局层既有的前提（见 ``whitespace.py``），并完 token 数
+    回到「语法 token 数」，这才是该拿去比闸门的量。
+    """
+    merge_whitespace_runs(stmt)
+    with _relaxed_token_limit(len(stmt.tokens)):
+        return _group_pipeline(stmt)
+
+
+def _group_pipeline(stmt):
+    """分组主体：官方步骤 + 本项目补偿（调用前已确认 token 闸门放行）。"""
     _group_interval_literals(stmt)  # 必须在官方分组之前
     _wrap_keyword_alias_lhs(stmt)  # 必须在官方分组之前
     _pre_wrap_object_name(stmt)  # 必须在官方分组之前

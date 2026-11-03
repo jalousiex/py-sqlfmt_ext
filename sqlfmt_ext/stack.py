@@ -9,8 +9,11 @@
 **顺序**仍完全由官方 ``build_filter_stack`` 决定。
 """
 
+import logging
+
 from sqlparse import engine, filters, formatter
 from sqlparse import tokens as T
+from sqlparse.exceptions import SQLParseError
 
 from sqlfmt_ext import dialects, grouping, policy  # noqa: F401  确保分词补丁 ttype 已派生
 from sqlfmt_ext.filters.operators import SpacesAroundOperatorsFilter
@@ -18,9 +21,12 @@ from sqlfmt_ext.filters.whitespace import StripWhitespaceFilter
 from sqlfmt_ext.lexer import build_lexer
 from sqlfmt_ext.options import validate_options
 from sqlfmt_ext.passes.layout import LayoutPass
+from sqlfmt_ext.whitespace import merge_whitespace_runs
 
 # 官方产出「换行骨架」的 filter：由本项目 LayoutPass 取代
 _SKELETON_FILTERS = (filters.AlignedIndentFilter, filters.ReindentFilter)
+
+_logger = logging.getLogger(__name__)
 
 
 class FilterStack(engine.FilterStack):
@@ -169,15 +175,35 @@ def _format_statements_part(sql, opts):
 
 
 def _format_batch(sql, opts):
-    """按 ``;`` 拆分逐条格式化后以空行拼接（``format_statements`` 的主体）。"""
-    lexer = build_lexer(opts.get("dialect"))
+    """按 ``;`` 拆分逐条格式化后以空行拼接（``format_statements`` 的主体）。
 
-    splitter = FilterStack(lexer)
-    statements = [str(stmt).strip() for stmt in splitter.run(sql)]
+    逐条 ``try``：单条语句分组失败（例如超出官方 token 闸门的安全上限）时**该条原样
+    保留**并打 WARN，其余语句照常格式化 —— 既不向用户抛 traceback，也不会留下
+    「格式化到一半」的语句。汇报的 token 规模与分组闸门同一口径（连续空白已并段，
+    见 ``grouping.group``），而不是逐字符空白撑大的原始计数。
+    """
+    lexer = build_lexer(opts.get("dialect"))
+    statements = [
+        (str(stmt), stmt) for stmt in engine.StatementSplitter().process(lexer.get_tokens(sql))
+    ]
 
     stack = _assemble(opts)
     stack.postprocess.append(filters.SerializerUnicode())
-    return "\n\n".join("".join(stack.run(stmt)).strip() for stmt in statements)
+    formatted = []
+    for index, (text, stmt) in enumerate(statements, start=1):
+        statement = text.strip()
+        try:
+            formatted.append("".join(stack.run(statement)).strip())
+        except SQLParseError as exc:
+            merge_whitespace_runs(stmt)
+            _logger.warning(
+                "第 %d 条语句未能格式化（%d 个 token），已原样保留：%s",
+                index,
+                len(stmt.tokens),
+                exc,
+            )
+            formatted.append(statement)
+    return "\n\n".join(formatted)
 
 
 def _split_batches(sql, separator, lexer):

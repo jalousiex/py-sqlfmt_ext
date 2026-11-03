@@ -10,15 +10,15 @@
 
 ## §9 断点卡
 
-> 落盘时间：2026-09-16（E2 收工刷新）。
-> **S1–S7、S9、S10、S10-b、S8-a~d、S11–S19、E1、E2 全部完成**，门槛与 `KNOWN_DIVERGENT` 现状见 `status.md §3`。
+> 落盘时间：2026-11-03（S20 收工刷新）。
+> **S1–S7、S9、S10、S10-b、S8-a~d、S11–S19、E1、E2、S20 全部完成**，门槛与 `KNOWN_DIVERGENT` 现状见 `status.md §3`。
 
 **方言优先级（用户口径，2026-09-13 定）**：**Doris / SelectDB 最优先 → 其次 MySQL →
 Oracle / SQL Server 暂缓不做**。S8-a~d 至此全部收：Doris/SelectDB 与 MySQL 已适配；
 SQL Server（S8-c）已完成并保留（不回退、也不再往前推）；Oracle 未开工。
 
-**下一步开工点（2026-10-28，S19 收工刷新）**：**无** —— S19（字符串字面量里的转义反斜杠，
-U17）已收，卡见本文件 §9.23；S18（`over` 前夹注释的分组时序）见 §9.22。
+**下一步开工点（2026-11-03，S20 收工刷新）**：**无** —— S20（超长语句越过官方
+`MAX_GROUPING_TOKENS`，用户实测 traceback）已收，卡见本文件 §9.24。
 **当前无「必须做」的缺口**：剩下的都是**登记在案的已知边界 / 事实**（都不影响现有 fixture，各自需先开
 新阶段卡再动手），清单见 `status.md §3.5`（其中第 9–12 条是 E2 登记的 uv 类事实）；写卡前请先做下面这条巡检。
 
@@ -643,3 +643,61 @@ tool 解释器**交给 uv 自选**（工作区已 pin `.python-version`）、`--
 **回退方式**：`git revert` 单个提交（`policy.py` 的 `STRING_ESCAPE_REGEX` / `STRING_ANCHORS`、
 `lexer.py` 的那一次插入、`dialects.py` docstring，及 `cases/escape/` 两个 fixture 与
 `tests/test_sqlfmt_lexer.py`）。
+
+## §9.24 S20（2026-11-03，开工并收）：超长语句越过官方 `MAX_GROUPING_TOKENS`（10000）
+
+**缺口**（用户实测 traceback，`sqlfmt_ext` 作为 uv tool 运行）：
+
+```text
+sqlparse.exceptions.SQLParseError: Maximum number of tokens exceeded (10000).
+  stack.py:_format_batch → FilterStack.run → grouping.group → _group_interval_literals → official._group
+```
+
+**原因**（实测，与「整批累计」无关）：官方 0.6.0 的 `_group` 在**每一层**入口检查
+`len(tlist.tokens) > MAX_GROUPING_TOKENS`（0.6 为 10000），是纯 DoS 闸门、与正确性无关。
+`StatementSplitter` 已按 `;` 拆条，所以触发者是**单条语句**。复现实测：
+
+- 4000 列 `select … from t`：12005 token → 直接抛；
+- 3 条 2000 列语句（合计 18017）：每条 6005 → **正常格式化**（证明不是整批累计）。
+
+另一个被忽视的放大因子：官方 lexer **每个空白字符各出一个 token**（`' '*82` → 82 个）。
+本项目输出大量靠空格对齐，于是同一份 SQL 首跑 1.2 万 token、**格式化后再进来 13 万**
+（4000 列实测 12005 → 131997），光看根层计数会误判「第二次仍超限」。
+
+**目标**：超长语句不再抛 traceback；任何 `SQLParseError` 都以「原样保留 + WARN」降级，
+绝不产生半格式化输出；幂等、`;` 与 `@` 行口径不变。
+
+**方案取舍**（任务原要求先试预切分，实测后否掉）：
+
+| 方案 | 可行性 | 结论 |
+|---|---|---|
+| 按顶层 `union all` 预切分、逐段格式化再拼 | 只覆盖 union；**单个 `select` 的超宽字段清单没有可切的安全边界** —— 列对齐取整张列表的最宽项，切段后各段自对齐会改输出、二次格式化不收敛（实测 `c0` 对齐宽度变化）；且官方闸门在每层检查，段内仍可能有超限子查询 | ✗ |
+| 先「低代价规整」降低 token 数 | 重排行不改 token 个数；真正能降的是**空白粒度**（见上） | 只用作前置归一 |
+| 受控绕过内部上限（按版本探测 + 作用域内还原） | 覆盖全部形状，且与「官方不设闸门」逐 token 一致 | ✓ 采用 |
+
+**改动**（3 个源文件 + 1 个测试文件）：
+
+| # | 位置 | 改动 |
+|---|---|---|
+| ① | `sqlfmt_ext/grouping.py` | `group()` 先 `merge_whitespace_runs(stmt)`（把逐字符空白并段，`StripWhitespaceFilter`/布局层既有前提），再在 `_relaxed_token_limit(len(stmt.tokens))` 里跑 `_group_pipeline`（原 `group` 主体） |
+| ② | `sqlfmt_ext/grouping.py` | `_relaxed_token_limit`：`getattr(official, "MAX_GROUPING_TOKENS", None)` 版本探测；只在语句超限时**锁内**抬高到 `token_count + 1`，`finally` 还原；超 `_ABSOLUTE_TOKEN_CEILING = 100_000` 直接抛 `SQLParseError`（保留 DoS 语义），由 ③ 降级 |
+| ③ | `sqlfmt_ext/stack.py` | `_format_batch` 改用 `engine.StatementSplitter`（等价且省掉一次无谓分组），逐条 `try`：`SQLParseError` → 该条**原样保留** + `logger.warning("第 n 条语句…（N 个 token）…")`（N 与闸门同口径，空白已并段） |
+| ④ | `sqlfmt_ext/cli.py` | `main()` 调 `_configure_logging()`：给 `sqlfmt_ext` logger 挂一个指向**当前** `sys.stderr` 的 handler（stdout 只留格式化结果；`propagate=False` 避免宿主 root handler 重复打印）；文件级兜底捕获 `SQLParseError` → 可读提示 + **不写文件** + 返回 1 |
+| ⑤ | `tests/test_sqlfmt_oversize.py` | 新增 5 项：3400 列（10205 token）与 520 分支 `union all`（>10000 token）**真越限**用例（不抛、幂等、`;` 条数不变）；调小闸门覆盖「逐条原样保留 + WARN 含序号/规模」；CLI 两次（逐条降级不改文件、文件级失败不抛 traceback） |
+
+**证据**（用户等价形态，CLI 端到端）：520 分支 `union all`（22132 字节、>10000 token）
+→ 退出码 0、无 WARN、二次运行输出逐字节相同、`;` 仍为 1 条；4000 列表单首次输出
+`56008` 字节、二次格式化仍逐字节相同（空白并段后重跑不再撞安全上限）。`@` 定制行与
+语句分隔沿用既有 `_format_preserving_at_lines`，未动。
+
+**验收**：`296 passed`（原 291 一项没动，新增 5）；`KNOWN_DIVERGENT` 仍为空。
+
+**残留 / 下一步**：
+- 放宽闸门等于把 DoS 保护交给 `_ABSOLUTE_TOKEN_CEILING`；**运行时间**仍是官方/本项目
+  `LayoutPass` 的固有量级（超长语句近似二次，实测 3400 列约 10s、520 分支约 7s）。性能
+  优化不在本阶段范围。
+- `format_sql()`（单条 API）仍会抛 `SQLParseError`（上限/深度）；CLI 走的
+  `format_statements()` 已逐条降级。按需再议。
+
+**回退方式**：`git revert` 单个提交（`grouping.py` 的 `group` 拆分与 `_relaxed_token_limit`、
+`stack.py` 的 `_format_batch`、`cli.py` 的兜底、`tests/test_sqlfmt_oversize.py`）。

@@ -10,12 +10,33 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
+
+from sqlparse.exceptions import SQLParseError
 
 from sqlfmt_ext import format_statements
 
 enc = "utf-8"
+
+
+def _configure_logging() -> None:
+    """把包内 WARN 落到 stderr：stdout 只留格式化结果（可被重定向 / 管道消费）。
+
+    每次 ``main()`` 都换一个指向**当前** ``sys.stderr`` 的 handler：调用方可能重定向了
+    stderr（测试 / 包装脚本），复用旧 handler 会写进已失效的流。
+    """
+    logger = logging.getLogger("sqlfmt_ext")
+    for handler in [h for h in logger.handlers if getattr(h, "_sqlfmt_ext_cli", False)]:
+        logger.removeHandler(handler)
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    handler._sqlfmt_ext_cli = True  # type: ignore[attr-defined]
+    logger.addHandler(handler)
+    logger.setLevel(logging.WARNING)
+    # 只由本 handler 输出，避免宿主已配置 root handler 时重复打印
+    logger.propagate = False
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -44,7 +65,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """返回进程退出码：0 正常（无 path 时打印用法）；1 路径不存在。"""
+    """返回进程退出码：0 正常（无 path 时打印用法）；1 路径不存在或文件级格式化失败。"""
+    _configure_logging()
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -68,16 +90,23 @@ def main(argv: list[str] | None = None) -> int:
         if os.path.isdir(pth)
         else [pth]
     )
+    failed = False
     for file_path in paths:
-        with open(file_path, "r+" if args.in_place else "r", encoding=args.encoding) as fd:
-            sql = format_statements(fd.read(), options)
-            if args.in_place:
-                fd.seek(0)
-                fd.truncate()
-                fd.write(sql)
-            else:
-                print(sql, end="")
-    return 0
+        try:
+            with open(file_path, "r+" if args.in_place else "r", encoding=args.encoding) as fd:
+                sql = format_statements(fd.read(), options)
+                if args.in_place:
+                    fd.seek(0)
+                    fd.truncate()
+                    fd.write(sql)
+                else:
+                    print(sql, end="")
+        except SQLParseError as exc:
+            # 兜底：库层的逐条降级已经吃掉绝大多数情况，走到这里说明整个文件都没法格式化。
+            # **不写文件**（异常发生在写入之前），只给一条可读提示，不抛 traceback。
+            print(f"[sqlfmt_ext] {file_path}：格式化失败，文件保持原样（{exc}）", file=sys.stderr)
+            failed = True
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
